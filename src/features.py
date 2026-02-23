@@ -1,12 +1,5 @@
-"""
-Feature engineering module for churn prediction.
-
-Builds comprehensive features from customer behavioral data:
-- RFM (Recency, Frequency, Monetary) metrics
-- Engagement ratios
-- Behavioral trends
-- Category preferences
-"""
+# Feature engineering for churn prediction.
+# Takes raw events and builds usable features for modeling.
 
 from typing import Optional, List, Dict
 from datetime import timedelta
@@ -17,30 +10,20 @@ import numpy as np
 
 class FeatureEngineer:
     """
-    Build features from customer event data for churn prediction.
-    
-    Feature Categories:
-    1. Recency: Days since last activity (view/cart/purchase)
-    2. Frequency: Event counts, session counts
-    3. Monetary: Transaction value proxies (count-based for this dataset)
-    4. Engagement: Conversion ratios (view→cart→purchase)
-    5. Trend: Activity changes over time (first half vs second half)
-    6. Category: Purchase diversity and preferences
-    
-    Example:
-        >>> engineer = FeatureEngineer()
-        >>> features = engineer.build_features(events_df, labels_df)
+    Build features from customer event data.
+
+    Main categories:
+    - Recency: days since last activity
+    - Frequency: counts, sessions
+    - Monetary: transaction stuff (proxy since no prices)
+    - Engagement: conversion ratios
+    - Trend: first half vs second half changes
+    - Category: item diversity
     """
-    
+
     def __init__(self, session_timeout_minutes: int = 30):
-        """
-        Initialize feature engineer.
-        
-        Args:
-            session_timeout_minutes: Gap in minutes to define new session
-        """
         self.session_timeout = session_timeout_minutes
-        
+
     def build_features(
         self,
         events: pd.DataFrame,
@@ -48,435 +31,336 @@ class FeatureEngineer:
         include_categories: Optional[List[str]] = None,
     ) -> pd.DataFrame:
         """
-        Build all features for labeled customers.
-        
-        Args:
-            events: Events within observation window
-            labels: Customer labels with observation window metadata
-            include_categories: Feature categories to include. 
-                              Options: recency, frequency, monetary, engagement, trend, category
-                              If None, includes all.
-        
-        Returns:
-            DataFrame with visitorid and all computed features
+        Build features for the labeled customers.
+
+        include_categories lets you pick which feature types to compute.
+        If None, does everything.
         """
         categories = include_categories or [
-            "recency", "frequency", "monetary", "engagement", "trend", "category"
+            "recency",
+            "frequency",
+            "monetary",
+            "engagement",
+            "trend",
+            "category",
         ]
-        
+
         obs_end = labels["observation_end"].iloc[0]
         obs_start = labels["observation_start"].iloc[0]
         customer_ids = labels["visitorid"].values
-        
-        # Filter events to observation window
+
         mask = (
-            (events["timestamp"] >= obs_start) &
-            (events["timestamp"] < obs_end) &
-            (events["visitorid"].isin(customer_ids))
+            (events["timestamp"] >= obs_start)
+            & (events["timestamp"] < obs_end)
+            & (events["visitorid"].isin(customer_ids))
         )
         obs_events = events[mask].copy()
-        
-        print(f"Building features for {len(customer_ids):,} customers from {len(obs_events):,} events")
-        
-        # Initialize features DataFrame
+
+        print(
+            f"Building features for {len(customer_ids):,} customers from {len(obs_events):,} events"
+        )
+
         features = pd.DataFrame({"visitorid": customer_ids})
-        
-        # Build each feature category
+
+        # recency features - days since stuff
         if "recency" in categories:
-            recency_feats = self._build_recency_features(obs_events, obs_end)
-            features = features.merge(recency_feats, on="visitorid", how="left")
-            
+            rec = self._build_recency(obs_events, obs_end)
+            features = features.merge(rec, on="visitorid", how="left")
+
+        # frequency - counts of things
         if "frequency" in categories:
-            frequency_feats = self._build_frequency_features(obs_events)
-            features = features.merge(frequency_feats, on="visitorid", how="left")
-            
+            freq = self._build_frequency(obs_events)
+            features = features.merge(freq, on="visitorid", how="left")
+
+        # monetary - txn related (no actual prices in dataset)
         if "monetary" in categories:
-            monetary_feats = self._build_monetary_features(obs_events)
-            features = features.merge(monetary_feats, on="visitorid", how="left")
-            
+            mon = self._build_monetary(obs_events)
+            features = features.merge(mon, on="visitorid", how="left")
+
+        # engagement ratios - view->cart->purchase
         if "engagement" in categories:
-            engagement_feats = self._build_engagement_features(obs_events)
-            features = features.merge(engagement_feats, on="visitorid", how="left")
-            
+            eng = self._build_engagement(obs_events)
+            features = features.merge(eng, on="visitorid", how="left")
+
+        # trends - comparing first/second half of observation
         if "trend" in categories:
-            trend_feats = self._build_trend_features(obs_events, obs_start, obs_end)
-            features = features.merge(trend_feats, on="visitorid", how="left")
-            
+            tr = self._build_trend(obs_events, obs_start, obs_end)
+            features = features.merge(tr, on="visitorid", how="left")
+
+        # category/item diversity
         if "category" in categories:
-            category_feats = self._build_category_features(obs_events)
-            features = features.merge(category_feats, on="visitorid", how="left")
-        
-        # Fill NaN with appropriate defaults
-        features = self._fill_missing_values(features)
-        
+            cat = self._build_category(obs_events)
+            features = features.merge(cat, on="visitorid", how="left")
+
+        # fill missing
+        features = self._fill_missing(features)
+
         print(f"Created {len(features.columns) - 1} features")
-        
+
         return features
-    
-    def _build_recency_features(
-        self,
-        events: pd.DataFrame,
-        reference_date: pd.Timestamp
-    ) -> pd.DataFrame:
-        """
-        Build recency features - days since last activity.
-        
-        Features:
-        - days_since_last_view: Days since last view event
-        - days_since_last_cart: Days since last addtocart event
-        - days_since_last_purchase: Days since last transaction
-        - days_since_last_any: Days since any event
-        """
-        features = []
-        
-        for event_type, col_name in [
-            ("view", "days_since_last_view"),
-            ("addtocart", "days_since_last_cart"),
-            ("transaction", "days_since_last_purchase"),
+
+    def _build_recency(self, events: pd.DataFrame, ref_date: pd.Timestamp) -> pd.DataFrame:
+        """Recency = days since last activity of each type."""
+        feats = []
+
+        # using abbreviated names for some
+        for evt, col in [
+            ("view", "days_view"),
+            ("addtocart", "days_since_cart"),
+            ("transaction", "days_since_purchase"),
         ]:
-            event_subset = events[events["event"] == event_type]
-            if len(event_subset) > 0:
-                last_event = event_subset.groupby("visitorid")["timestamp"].max().reset_index()
-                last_event[col_name] = (reference_date - last_event["timestamp"]).dt.days
-                features.append(last_event[["visitorid", col_name]])
-        
-        # Days since any event
+            subset = events[events["event"] == evt]
+            if len(subset) > 0:
+                last = subset.groupby("visitorid")["timestamp"].max().reset_index()
+                last[col] = (ref_date - last["timestamp"]).dt.days
+                feats.append(last[["visitorid", col]])
+
+        # any activity
         last_any = events.groupby("visitorid")["timestamp"].max().reset_index()
-        last_any["days_since_last_any"] = (reference_date - last_any["timestamp"]).dt.days
-        features.append(last_any[["visitorid", "days_since_last_any"]])
-        
-        # Merge all recency features
-        result = features[0]
-        for df in features[1:]:
-            result = result.merge(df, on="visitorid", how="outer")
-        
+        last_any["days_since_any"] = (ref_date - last_any["timestamp"]).dt.days
+        feats.append(last_any[["visitorid", "days_since_any"]])
+
+        result = feats[0]
+        for f in feats[1:]:
+            result = result.merge(f, on="visitorid", how="outer")
+
         return result
-    
-    def _build_frequency_features(self, events: pd.DataFrame) -> pd.DataFrame:
-        """
-        Build frequency features - event counts and patterns.
-        
-        Features:
-        - total_events: Total number of events
-        - view_count: Number of view events
-        - cart_count: Number of addtocart events
-        - purchase_count: Number of transactions
-        - unique_items_viewed: Distinct items viewed
-        - unique_items_carted: Distinct items added to cart
-        - unique_items_purchased: Distinct items purchased
-        - session_count: Number of distinct sessions
-        - avg_events_per_session: Average events per session
-        - active_days: Number of days with any activity
-        """
-        # Event type counts
-        event_counts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
-        event_counts.columns = [f"{col}_count" for col in event_counts.columns]
-        event_counts["total_events"] = event_counts.sum(axis=1)
-        event_counts = event_counts.reset_index()
-        
-        # Unique items per event type
-        unique_items = events.groupby(["visitorid", "event"])["itemid"].nunique().unstack(fill_value=0)
-        unique_items.columns = [f"unique_items_{col}" for col in unique_items.columns]
-        unique_items = unique_items.reset_index()
-        
-        # Session features
-        session_feats = self._compute_session_features(events)
-        
-        # Active days
-        active_days = events.groupby("visitorid").apply(
-            lambda x: x["timestamp"].dt.date.nunique()
-        ).reset_index(name="active_days")
-        
-        # Merge all
-        result = event_counts.merge(unique_items, on="visitorid", how="outer")
-        result = result.merge(session_feats, on="visitorid", how="outer")
-        result = result.merge(active_days, on="visitorid", how="outer")
-        
-        return result
-    
-    def _compute_session_features(self, events: pd.DataFrame) -> pd.DataFrame:
-        """Compute session-based features."""
-        events_sorted = events.sort_values(["visitorid", "timestamp"])
-        
-        # Identify session boundaries (gap > threshold = new session)
-        events_sorted["time_diff"] = events_sorted.groupby("visitorid")["timestamp"].diff()
-        events_sorted["new_session"] = (
-            events_sorted["time_diff"] > timedelta(minutes=self.session_timeout)
-        ) | events_sorted["time_diff"].isna()
-        events_sorted["session_id"] = events_sorted.groupby("visitorid")["new_session"].cumsum()
-        
-        # Session count per customer
-        session_count = events_sorted.groupby("visitorid")["session_id"].max().reset_index()
-        session_count.columns = ["visitorid", "session_count"]
-        
-        # Average events per session
-        events_per_session = events_sorted.groupby(["visitorid", "session_id"]).size()
-        avg_events = events_per_session.groupby("visitorid").mean().reset_index(name="avg_events_per_session")
-        
-        return session_count.merge(avg_events, on="visitorid", how="outer")
-    
-    def _build_monetary_features(self, events: pd.DataFrame) -> pd.DataFrame:
-        """
-        Build monetary features.
-        
-        Note: RetailRocket doesn't have explicit prices, so we use proxies.
-        
-        Features:
-        - transaction_count: Number of purchase events
-        - avg_items_per_transaction: Items per transaction
-        - total_items_purchased: Total items bought
-        """
-        transactions = events[events["event"] == "transaction"]
-        
-        if len(transactions) == 0:
-            return pd.DataFrame(columns=["visitorid", "transaction_count", 
-                                        "avg_items_per_transaction", "total_items_purchased"])
-        
-        # Transaction-level aggregations
-        txn_stats = transactions.groupby("visitorid").agg(
-            transaction_count=("transactionid", "nunique"),
-            total_items_purchased=("itemid", "count"),
-        ).reset_index()
-        
-        txn_stats["avg_items_per_transaction"] = (
-            txn_stats["total_items_purchased"] / txn_stats["transaction_count"]
+
+    def _build_frequency(self, events: pd.DataFrame) -> pd.DataFrame:
+        """Count-based features."""
+        # event counts by type
+        evt_counts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
+        evt_counts.columns = [f"{c}_count" for c in evt_counts.columns]
+        evt_counts["total_events"] = evt_counts.sum(axis=1)
+        evt_counts = evt_counts.reset_index()
+
+        # unique items per event type
+        uniq = events.groupby(["visitorid", "event"])["itemid"].nunique().unstack(fill_value=0)
+        uniq.columns = [f"uniq_{c}" for c in uniq.columns]
+        uniq = uniq.reset_index()
+
+        # sessions
+        sess = self._compute_sessions(events)
+
+        # active days
+        active = (
+            events.groupby("visitorid")
+            .apply(lambda x: x["timestamp"].dt.date.nunique())
+            .reset_index(name="active_days")
         )
-        
-        return txn_stats
-    
-    def _build_engagement_features(self, events: pd.DataFrame) -> pd.DataFrame:
-        """
-        Build engagement features - conversion ratios.
-        
-        Features:
-        - view_to_cart_rate: % of views that became cart additions
-        - cart_to_purchase_rate: % of cart items that were purchased
-        - view_to_purchase_rate: % of views that led to purchase
-        - cart_abandonment_rate: % of carted items not purchased
-        """
-        # Get counts per user and event type
-        counts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
-        
-        result = pd.DataFrame({"visitorid": counts.index})
-        
-        # View to cart rate
-        if "view" in counts.columns and "addtocart" in counts.columns:
-            result["view_to_cart_rate"] = np.where(
-                counts["view"] > 0,
-                counts["addtocart"] / counts["view"],
-                0
+
+        result = evt_counts.merge(uniq, on="visitorid", how="outer")
+        result = result.merge(sess, on="visitorid", how="outer")
+        result = result.merge(active, on="visitorid", how="outer")
+
+        return result
+
+    def _compute_sessions(self, events: pd.DataFrame) -> pd.DataFrame:
+        """Figure out session boundaries."""
+        sorted_evts = events.sort_values(["visitorid", "timestamp"])
+
+        sorted_evts["t_diff"] = sorted_evts.groupby("visitorid")["timestamp"].diff()
+        sorted_evts["new_sess"] = (
+            sorted_evts["t_diff"] > timedelta(minutes=self.session_timeout)
+        ) | sorted_evts["t_diff"].isna()
+        sorted_evts["sess_id"] = sorted_evts.groupby("visitorid")["new_sess"].cumsum()
+
+        sess_cnt = sorted_evts.groupby("visitorid")["sess_id"].max().reset_index()
+        sess_cnt.columns = ["visitorid", "session_count"]
+
+        evts_per = sorted_evts.groupby(["visitorid", "sess_id"]).size()
+        avg_evts = evts_per.groupby("visitorid").mean().reset_index(name="avg_evts_per_sess")
+
+        return sess_cnt.merge(avg_evts, on="visitorid", how="outer")
+
+    def _build_monetary(self, events: pd.DataFrame) -> pd.DataFrame:
+        """Monetary features - using counts since no prices."""
+        txns = events[events["event"] == "transaction"]
+
+        if len(txns) == 0:
+            return pd.DataFrame(
+                columns=["visitorid", "txn_count", "avg_items_per_txn", "total_items"]
+            )
+
+        # aggregated at visitor level
+        stats = (
+            txns.groupby("visitorid")
+            .agg(
+                txn_count=("transactionid", "nunique"),
+                total_items=("itemid", "count"),
+            )
+            .reset_index()
+        )
+
+        stats["avg_items_per_txn"] = stats["total_items"] / stats["txn_count"]
+
+        return stats
+
+    def _build_engagement(self, events: pd.DataFrame) -> pd.DataFrame:
+        """Conversion ratios - how engaged is this person."""
+        cnts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
+
+        res = pd.DataFrame({"visitorid": cnts.index})
+
+        # view -> cart
+        if "view" in cnts.columns and "addtocart" in cnts.columns:
+            res["v2c_rate"] = np.where(cnts["view"] > 0, cnts["addtocart"] / cnts["view"], 0)
+        else:
+            res["v2c_rate"] = 0
+
+        # cart -> purchase
+        if "addtocart" in cnts.columns and "transaction" in cnts.columns:
+            res["c2p_rate"] = np.where(
+                cnts["addtocart"] > 0, cnts["transaction"] / cnts["addtocart"], 0
             )
         else:
-            result["view_to_cart_rate"] = 0
-        
-        # Cart to purchase rate
-        if "addtocart" in counts.columns and "transaction" in counts.columns:
-            result["cart_to_purchase_rate"] = np.where(
-                counts["addtocart"] > 0,
-                counts["transaction"] / counts["addtocart"],
-                0
+            res["c2p_rate"] = 0
+
+        # view -> purchase (direct)
+        if "view" in cnts.columns and "transaction" in cnts.columns:
+            res["v2p_rate"] = np.where(cnts["view"] > 0, cnts["transaction"] / cnts["view"], 0)
+        else:
+            res["v2p_rate"] = 0
+
+        # cart abandon
+        if "addtocart" in cnts.columns and "transaction" in cnts.columns:
+            res["cart_abandon"] = np.where(
+                cnts["addtocart"] > 0, 1 - (cnts["transaction"] / cnts["addtocart"]), 1
             )
         else:
-            result["cart_to_purchase_rate"] = 0
-        
-        # View to purchase rate
-        if "view" in counts.columns and "transaction" in counts.columns:
-            result["view_to_purchase_rate"] = np.where(
-                counts["view"] > 0,
-                counts["transaction"] / counts["view"],
-                0
-            )
-        else:
-            result["view_to_purchase_rate"] = 0
-        
-        # Cart abandonment rate
-        if "addtocart" in counts.columns and "transaction" in counts.columns:
-            result["cart_abandonment_rate"] = np.where(
-                counts["addtocart"] > 0,
-                1 - (counts["transaction"] / counts["addtocart"]),
-                1
-            )
-        else:
-            result["cart_abandonment_rate"] = 1
-        
-        # Clip rates to [0, 1]
-        rate_cols = ["view_to_cart_rate", "cart_to_purchase_rate", 
-                     "view_to_purchase_rate", "cart_abandonment_rate"]
-        for col in rate_cols:
-            if col in result.columns:
-                result[col] = result[col].clip(0, 1)
-        
-        return result.reset_index(drop=True)
-    
-    def _build_trend_features(
-        self,
-        events: pd.DataFrame,
-        obs_start: pd.Timestamp,
-        obs_end: pd.Timestamp
+            res["cart_abandon"] = 1
+
+        for c in ["v2c_rate", "c2p_rate", "v2p_rate", "cart_abandon"]:
+            if c in res.columns:
+                res[c] = res[c].clip(0, 1)
+
+        return res.reset_index(drop=True)
+
+    def _build_trend(
+        self, events: pd.DataFrame, obs_start: pd.Timestamp, obs_end: pd.Timestamp
     ) -> pd.DataFrame:
-        """
-        Build trend features - activity changes over time.
-        
-        Compare first half vs second half of observation window.
-        
-        Features:
-        - activity_trend: (second_half - first_half) / first_half
-        - purchase_trend: Same for transactions
-        - engagement_trend: Same for cart additions
-        - is_declining: Boolean flag for declining activity
-        """
-        midpoint = obs_start + (obs_end - obs_start) / 2
-        
-        first_half = events[events["timestamp"] < midpoint]
-        second_half = events[events["timestamp"] >= midpoint]
-        
-        # Activity counts per half
-        first_counts = first_half.groupby("visitorid").size().reset_index(name="first_half_events")
-        second_counts = second_half.groupby("visitorid").size().reset_index(name="second_half_events")
-        
-        # Transaction counts per half
-        first_txn = first_half[first_half["event"] == "transaction"].groupby("visitorid").size()
-        first_txn = first_txn.reset_index(name="first_half_purchases")
-        second_txn = second_half[second_half["event"] == "transaction"].groupby("visitorid").size()
-        second_txn = second_txn.reset_index(name="second_half_purchases")
-        
-        # Merge all
-        result = first_counts.merge(second_counts, on="visitorid", how="outer")
-        result = result.merge(first_txn, on="visitorid", how="outer")
-        result = result.merge(second_txn, on="visitorid", how="outer")
+        """Compare first half to second half - are they ramping up or down?"""
+        mid = obs_start + (obs_end - obs_start) / 2
+
+        first = events[events["timestamp"] < mid]
+        second = events[events["timestamp"] >= mid]
+
+        f_cnt = first.groupby("visitorid").size().reset_index(name="first_evts")
+        s_cnt = second.groupby("visitorid").size().reset_index(name="second_evts")
+
+        f_txn = (
+            first[first["event"] == "transaction"]
+            .groupby("visitorid")
+            .size()
+            .reset_index(name="first_txns")
+        )
+        s_txn = (
+            second[second["event"] == "transaction"]
+            .groupby("visitorid")
+            .size()
+            .reset_index(name="second_txns")
+        )
+
+        result = f_cnt.merge(s_cnt, on="visitorid", how="outer")
+        result = result.merge(f_txn, on="visitorid", how="outer")
+        result = result.merge(s_txn, on="visitorid", how="outer")
         result = result.fillna(0)
-        
-        # Calculate trends (avoid division by zero)
-        epsilon = 1e-6
-        result["activity_trend"] = (
-            (result["second_half_events"] - result["first_half_events"]) / 
-            (result["first_half_events"] + epsilon)
+
+        eps = 1e-6  # avoid div by zero
+        result["activity_trend"] = (result["second_evts"] - result["first_evts"]) / (
+            result["first_evts"] + eps
         )
-        result["purchase_trend"] = (
-            (result["second_half_purchases"] - result["first_half_purchases"]) / 
-            (result["first_half_purchases"] + epsilon)
+        result["purchase_trend"] = (result["second_txns"] - result["first_txns"]) / (
+            result["first_txns"] + eps
         )
-        
-        # Clip extreme values
+
         result["activity_trend"] = result["activity_trend"].clip(-10, 10)
         result["purchase_trend"] = result["purchase_trend"].clip(-10, 10)
-        
-        # Declining flag
+
         result["is_declining"] = (result["activity_trend"] < -0.2).astype(int)
-        
-        # Drop intermediate columns
-        result = result[["visitorid", "activity_trend", "purchase_trend", "is_declining"]]
-        
-        return result
-    
-    def _build_category_features(self, events: pd.DataFrame) -> pd.DataFrame:
-        """
-        Build category/item diversity features.
-        
-        Features:
-        - unique_items_interacted: Total distinct items
-        - item_diversity_ratio: unique_items / total_events
-        - repeat_item_rate: % of events on previously seen items
-        - favorite_item_visits: Events on most visited item
-        """
-        # Basic item diversity
-        item_stats = events.groupby("visitorid").agg(
-            unique_items_interacted=("itemid", "nunique"),
-            total_interactions=("itemid", "count"),
-        ).reset_index()
-        
-        item_stats["item_diversity_ratio"] = (
-            item_stats["unique_items_interacted"] / item_stats["total_interactions"]
+
+        return result[["visitorid", "activity_trend", "purchase_trend", "is_declining"]]
+
+    def _build_category(self, events: pd.DataFrame) -> pd.DataFrame:
+        """Item diversity and repeat behavior."""
+        stats = (
+            events.groupby("visitorid")
+            .agg(
+                uniq_items=("itemid", "nunique"),
+                tot_interactions=("itemid", "count"),
+            )
+            .reset_index()
         )
-        
-        # Favorite item visits
-        item_visit_counts = events.groupby(["visitorid", "itemid"]).size().reset_index(name="visits")
-        max_visits = item_visit_counts.groupby("visitorid")["visits"].max().reset_index()
-        max_visits.columns = ["visitorid", "favorite_item_visits"]
-        
-        result = item_stats.merge(max_visits, on="visitorid", how="left")
-        
-        # Repeat item rate
-        result["repeat_item_rate"] = 1 - result["item_diversity_ratio"]
-        
-        # Drop intermediate column
-        result = result.drop(columns=["total_interactions"])
-        
-        return result
-    
-    def _fill_missing_values(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Fill missing values with appropriate defaults."""
-        # Recency features: fill with max (worst case)
-        recency_cols = [c for c in features.columns if c.startswith("days_since")]
-        for col in recency_cols:
-            if col in features.columns:
-                max_val = features[col].max()
-                features[col] = features[col].fillna(max_val if pd.notna(max_val) else 999)
-        
-        # Count features: fill with 0
-        count_cols = [c for c in features.columns if "_count" in c or c.startswith("total_")]
-        for col in count_cols:
-            features[col] = features[col].fillna(0)
-        
-        # Rate features: fill with 0
-        rate_cols = [c for c in features.columns if "_rate" in c or "_ratio" in c]
-        for col in rate_cols:
-            features[col] = features[col].fillna(0)
-        
-        # Trend features: fill with 0 (no change)
-        trend_cols = [c for c in features.columns if "_trend" in c]
-        for col in trend_cols:
-            features[col] = features[col].fillna(0)
-        
-        # Any remaining NaN
-        features = features.fillna(0)
-        
-        return features
-    
+
+        stats["diversity_ratio"] = stats["uniq_items"] / stats["tot_interactions"]
+
+        # most-visited item
+        item_visits = events.groupby(["visitorid", "itemid"]).size().reset_index(name="visits")
+        max_visits = item_visits.groupby("visitorid")["visits"].max().reset_index()
+        max_visits.columns = ["visitorid", "fav_item_visits"]
+
+        result = stats.merge(max_visits, on="visitorid", how="left")
+        result["repeat_rate"] = 1 - result["diversity_ratio"]
+
+        return result.drop(columns=["tot_interactions"])
+
+    def _fill_missing(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fill NaNs with reasonable defaults."""
+        # recency - worst case
+        rec_cols = [c for c in df.columns if "days" in c]
+        for c in rec_cols:
+            if c in df.columns:
+                mx = df[c].max()
+                df[c] = df[c].fillna(mx if pd.notna(mx) else 999)
+
+        # counts get 0
+        cnt_cols = [
+            c for c in df.columns if "count" in c or c.startswith("total") or c.startswith("txn")
+        ]
+        df[cnt_cols] = df[cnt_cols].fillna(0)
+
+        # rates and ratios
+        rate_cols = [c for c in df.columns if "_rate" in c or "_ratio" in c or "abandon" in c]
+        df[rate_cols] = df[rate_cols].fillna(0)
+
+        # trends - neutral
+        trend_cols = [c for c in df.columns if "trend" in c]
+        df[trend_cols] = df[trend_cols].fillna(0)
+
+        # anything left
+        df = df.fillna(0)
+
+        return df
+
     def get_feature_descriptions(self) -> Dict[str, str]:
-        """
-        Get human-readable descriptions of all features.
-        
-        Returns:
-            Dictionary mapping feature name to description
-        """
+        """Short descriptions of what each feature means."""
         return {
-            # Recency
-            "days_since_last_view": "Days since customer last viewed a product",
-            "days_since_last_cart": "Days since customer last added item to cart",
-            "days_since_last_purchase": "Days since customer last made a purchase",
-            "days_since_last_any": "Days since any customer activity",
-            
-            # Frequency
-            "total_events": "Total number of customer interactions",
-            "view_count": "Number of product views",
-            "addtocart_count": "Number of add-to-cart actions",
-            "transaction_count": "Number of completed purchases",
-            "unique_items_view": "Distinct products viewed",
-            "unique_items_addtocart": "Distinct products added to cart",
-            "unique_items_transaction": "Distinct products purchased",
-            "session_count": "Number of browsing sessions",
-            "avg_events_per_session": "Average actions per session",
-            "active_days": "Days with at least one activity",
-            
-            # Monetary
-            "avg_items_per_transaction": "Average items per order",
-            "total_items_purchased": "Total items bought",
-            
-            # Engagement
-            "view_to_cart_rate": "Conversion rate from view to cart",
-            "cart_to_purchase_rate": "Conversion rate from cart to purchase",
-            "view_to_purchase_rate": "Direct conversion from view to purchase",
-            "cart_abandonment_rate": "Rate of items carted but not purchased",
-            
-            # Trend
-            "activity_trend": "Change in activity (positive = increasing)",
-            "purchase_trend": "Change in purchases (positive = increasing)",
-            "is_declining": "Flag for significantly declining activity",
-            
-            # Category/Item
-            "unique_items_interacted": "Total distinct items engaged with",
-            "item_diversity_ratio": "Variety of items relative to total actions",
-            "repeat_item_rate": "Rate of returning to same items",
-            "favorite_item_visits": "Visits to most popular item for customer",
+            "days_view": "days since last view",
+            "days_since_cart": "days since added to cart",
+            "days_since_purchase": "days since bought something",
+            "days_since_any": "days since any activity",
+            "total_events": "how many total interactions",
+            "view_count": "product views",
+            "addtocart_count": "add to cart actions",
+            "transaction_count": "purchases made",
+            "uniq_view": "different products viewed",
+            "uniq_addtocart": "different products in cart",
+            "uniq_transaction": "different products bought",
+            "session_count": "browsing sessions",
+            "avg_evts_per_sess": "actions per session",
+            "active_days": "days with activity",
+            "txn_count": "purchase count",
+            "avg_items_per_txn": "items per order",
+            "total_items": "total items bought",
+            "v2c_rate": "view to cart rate",
+            "c2p_rate": "cart to purchase rate",
+            "v2p_rate": "view to purchase rate",
+            "cart_abandon": "cart abandonment rate",
+            "activity_trend": "activity change (pos = up)",
+            "purchase_trend": "purchase change (pos = up)",
+            "is_declining": "activity dropping off",
+            "uniq_items": "different items seen",
+            "diversity_ratio": "variety of items / total actions",
+            "repeat_rate": "how often returning to same items",
+            "fav_item_visits": "visits to favorite item",
         }

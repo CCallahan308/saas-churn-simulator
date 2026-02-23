@@ -1,9 +1,5 @@
-"""
-Churn definition and labeling module.
-
-Implements configurable churn labeling based on observation and churn windows.
-Business logic for defining when a customer has "churned" in an ecommerce context.
-"""
+# Churn labeling - deciding who "churned"
+# based on time windows: observation -> gap -> churn check
 
 from dataclasses import dataclass
 from datetime import timedelta
@@ -14,263 +10,146 @@ import numpy as np
 
 
 @dataclass
-class ChurnWindows:
-    """
-    Configuration for churn labeling time windows.
-    
-    Timeline visualization:
-    
-    |<-- observation_days -->|<-- gap_days -->|<-- churn_days -->|
-    |   Build features here  |    Buffer      |  Check for churn |
-    
-    Attributes:
-        observation_days: Days to look back for feature building
-        gap_days: Buffer period to prevent data leakage
-        churn_days: Window to check for churn (no transaction = churned)
-    """
-    observation_days: int = 60
-    gap_days: int = 7
-    churn_days: int = 30
-    
+class Windows:
+    """Time window config for churn labeling."""
+
+    obs: int = 60  # observation days
+    gap: int = 7  # buffer
+    chk: int = 30  # churn check days
+
     @property
-    def total_days_needed(self) -> int:
-        """Total days needed for one observation."""
-        return self.observation_days + self.gap_days + self.churn_days
-    
-    def __repr__(self) -> str:
-        return (
-            f"ChurnWindows(observation={self.observation_days}d, "
-            f"gap={self.gap_days}d, churn={self.churn_days}d)"
-        )
+    def total(self):
+        return self.obs + self.gap + self.chk
+
+    def __repr__(self):
+        return f"Windows(obs={self.obs}, gap={self.gap}, check={self.chk})"
 
 
 class ChurnLabeler:
     """
-    Label customers as churned or retained based on transaction behavior.
-    
-    Churn Definition:
-    - A customer is "churned" if they have no transactions in the churn window
-    - Only customers with at least one transaction in observation window are labeled
-    - This ensures we're predicting churn for "active" customers
-    
-    Example:
-        >>> labeler = ChurnLabeler(
-        ...     windows=ChurnWindows(observation_days=60, gap_days=7, churn_days=30)
-        ... )
-        >>> labeled_df = labeler.label_churn(events_df, snapshot_date="2015-08-01")
+    Label customers as churned or not.
+
+    Simple rule: no purchase in churn window = churned.
+    Only customers with at least one purchase in observation period are labeled.
     """
-    
-    def __init__(self, windows: Optional[ChurnWindows] = None):
+
+    def __init__(self, windows=None):
+        self.w = windows or Windows()
+
+    def label(self, events, snapshot=None, min_txns=1):
         """
-        Initialize churn labeler.
-        
-        Args:
-            windows: ChurnWindows configuration. Uses defaults if None.
+        Main labeling function.
+
+        events: df with timestamp, visitorid, event, itemid, transactionid
+        snapshot: reference date (if None, auto-calculated)
+        min_txns: min transactions in obs period to be included
+
+        Returns df with visitorid, churned, and window info
         """
-        self.windows = windows or ChurnWindows()
-        
-    def label_churn(
-        self,
-        events: pd.DataFrame,
-        snapshot_date: Optional[str] = None,
-        min_transactions_observation: int = 1,
-    ) -> pd.DataFrame:
-        """
-        Label customers with churn status.
-        
-        Args:
-            events: DataFrame with columns [timestamp, visitorid, event, itemid]
-            snapshot_date: Date to use as reference point. If None, uses max date
-                           minus total_days_needed to ensure enough data.
-            min_transactions_observation: Minimum transactions in observation window
-                                         to be included (filters to active base)
-        
-        Returns:
-            DataFrame with columns:
-            - visitorid: Customer ID
-            - churned: 1 if churned, 0 if retained
-            - observation_start: Start of observation window
-            - observation_end: End of observation window
-            - churn_window_start: Start of churn evaluation window
-            - churn_window_end: End of churn evaluation window
-            - txn_count_observation: Transaction count in observation period
-            - txn_count_churn: Transaction count in churn period
-        """
-        # Determine snapshot date
-        if snapshot_date:
-            snapshot = pd.to_datetime(snapshot_date)
+        w = self.w
+
+        # figure out snapshot
+        if snapshot:
+            snap = pd.to_datetime(snapshot)
         else:
-            # Use the latest date that allows full window calculation
-            max_date = events["timestamp"].max()
-            snapshot = max_date - timedelta(days=self.windows.churn_days)
-        
-        # Calculate window boundaries
-        observation_end = snapshot - timedelta(days=self.windows.gap_days)
-        observation_start = observation_end - timedelta(days=self.windows.observation_days)
-        churn_window_start = snapshot
-        churn_window_end = snapshot + timedelta(days=self.windows.churn_days)
-        
-        print(f"Labeling churn with windows:")
-        print(f"  Observation: {observation_start.date()} to {observation_end.date()}")
-        print(f"  Gap: {observation_end.date()} to {churn_window_start.date()}")
-        print(f"  Churn window: {churn_window_start.date()} to {churn_window_end.date()}")
-        
-        # Filter to transactions only
-        transactions = events[events["event"] == "transaction"].copy()
-        
-        # Get transactions in observation window
-        obs_mask = (
-            (transactions["timestamp"] >= observation_start) &
-            (transactions["timestamp"] < observation_end)
+            max_dt = events["timestamp"].max()
+            snap = max_dt - timedelta(days=w.chk)
+
+        # boundaries
+        obs_end = snap - timedelta(days=w.gap)
+        obs_start = obs_end - timedelta(days=w.obs)
+        chk_start = snap
+        chk_end = snap + timedelta(days=w.chk)
+
+        print(f"obs: {obs_start.date()} to {obs_end.date()}")
+        print(f"gap: {obs_end.date()} to {chk_start.date()}")
+        print(f"check: {chk_start.date()} to {chk_end.date()}")
+
+        # just transactions
+        txns = events[events["event"] == "transaction"].copy()
+
+        # obs period txns
+        obs_txns = txns[(txns["timestamp"] >= obs_start) & (txns["timestamp"] < obs_end)]
+        obs_cnts = obs_txns.groupby("visitorid").size().reset_index(name="n_obs")
+
+        # filter to active customers
+        active = obs_cnts[obs_cnts["n_obs"] >= min_txns]["visitorid"].values
+        print(f"active customers: {len(active):,}")
+
+        # check period txns
+        chk_txns = txns[(txns["timestamp"] >= chk_start) & (txns["timestamp"] < chk_end)]
+        chk_cnts = chk_txns.groupby("visitorid").size().reset_index(name="n_chk")
+
+        # build output
+        out = pd.DataFrame({"visitorid": active})
+        out = out.merge(obs_cnts, on="visitorid", how="left")
+        out = out.merge(chk_cnts, on="visitorid", how="left")
+        out["n_chk"] = out["n_chk"].fillna(0).astype(int)
+
+        # churn = no txns in check period
+        out["churned"] = (out["n_chk"] == 0).astype(int)
+
+        # metadata
+        out["obs_start"] = obs_start
+        out["obs_end"] = obs_end
+        out["chk_start"] = chk_start
+        out["chk_end"] = chk_end
+
+        rate = out["churned"].mean()
+        print(f"churn rate: {rate:.1%}")
+
+        return out
+
+    def train_val_test_split(self, events, test_size=0.2, val_size=0.1):
+        """Make time-based splits to avoid leakage."""
+        mn = events["timestamp"].min()
+        mx = events["timestamp"].max()
+        total_days = (mx - mn).days
+
+        buf = self.w.total
+        usable = total_days - buf
+        test_days = int(usable * test_size)
+        val_days = int(usable * val_size)
+
+        test_snap = mx - timedelta(days=self.w.chk)
+        val_snap = test_snap - timedelta(days=test_days)
+        train_snap = val_snap - timedelta(days=val_days)
+
+        print(f"data: {mn.date()} to {mx.date()} ({total_days}d)")
+
+        tr = self.label(events, snapshot=str(train_snap.date()))
+        va = self.label(events, snapshot=str(val_snap.date()))
+        te = self.label(events, snapshot=str(test_snap.date()))
+
+        return tr, va, te
+
+    def obs_events(self, events, labels):
+        """Get events from observation period for the labeled customers."""
+        start = labels["obs_start"].iloc[0]
+        end = labels["obs_end"].iloc[0]
+        vids = labels["visitorid"].values
+
+        m = (
+            (events["timestamp"] >= start)
+            & (events["timestamp"] < end)
+            & (events["visitorid"].isin(vids))
         )
-        obs_transactions = transactions[obs_mask]
-        
-        # Count transactions per customer in observation window
-        obs_counts = obs_transactions.groupby("visitorid").size().reset_index(name="txn_count_observation")
-        
-        # Filter to customers with minimum transactions
-        active_customers = obs_counts[
-            obs_counts["txn_count_observation"] >= min_transactions_observation
-        ]["visitorid"].values
-        
-        print(f"  Active customers (>={min_transactions_observation} txns): {len(active_customers):,}")
-        
-        # Get transactions in churn window
-        churn_mask = (
-            (transactions["timestamp"] >= churn_window_start) &
-            (transactions["timestamp"] < churn_window_end)
-        )
-        churn_transactions = transactions[churn_mask]
-        
-        # Count transactions per customer in churn window
-        churn_counts = churn_transactions.groupby("visitorid").size().reset_index(name="txn_count_churn")
-        
-        # Build labeled dataset
-        labeled = pd.DataFrame({"visitorid": active_customers})
-        labeled = labeled.merge(obs_counts, on="visitorid", how="left")
-        labeled = labeled.merge(churn_counts, on="visitorid", how="left")
-        labeled["txn_count_churn"] = labeled["txn_count_churn"].fillna(0).astype(int)
-        
-        # Label churn: 1 if no transactions in churn window
-        labeled["churned"] = (labeled["txn_count_churn"] == 0).astype(int)
-        
-        # Add window metadata
-        labeled["observation_start"] = observation_start
-        labeled["observation_end"] = observation_end
-        labeled["churn_window_start"] = churn_window_start
-        labeled["churn_window_end"] = churn_window_end
-        
-        churn_rate = labeled["churned"].mean()
-        print(f"  Churn rate: {churn_rate:.1%}")
-        print(f"  Churned: {labeled['churned'].sum():,} | Retained: {(~labeled['churned'].astype(bool)).sum():,}")
-        
-        return labeled
-    
-    def create_train_test_split(
-        self,
-        events: pd.DataFrame,
-        test_size: float = 0.2,
-        validation_size: float = 0.1,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """
-        Create time-based train/validation/test splits.
-        
-        Uses different snapshot dates to prevent data leakage:
-        - Training: Earliest window
-        - Validation: Middle window
-        - Test: Latest window
-        
-        Args:
-            events: Raw events DataFrame
-            test_size: Fraction of timeline for test set
-            validation_size: Fraction of timeline for validation set
-            
-        Returns:
-            Tuple of (train_labels, val_labels, test_labels)
-        """
-        min_date = events["timestamp"].min()
-        max_date = events["timestamp"].max()
-        total_days = (max_date - min_date).days
-        
-        # Calculate snapshot dates for each split
-        # Each split needs total_days_needed from its snapshot
-        buffer = self.windows.total_days_needed
-        
-        usable_days = total_days - buffer
-        test_days = int(usable_days * test_size)
-        val_days = int(usable_days * validation_size)
-        
-        test_snapshot = max_date - timedelta(days=self.windows.churn_days)
-        val_snapshot = test_snapshot - timedelta(days=test_days)
-        train_snapshot = val_snapshot - timedelta(days=val_days)
-        
-        print(f"Creating time-based splits:")
-        print(f"  Data range: {min_date.date()} to {max_date.date()} ({total_days} days)")
-        
-        train_labels = self.label_churn(events, snapshot_date=str(train_snapshot.date()))
-        val_labels = self.label_churn(events, snapshot_date=str(val_snapshot.date()))
-        test_labels = self.label_churn(events, snapshot_date=str(test_snapshot.date()))
-        
-        return train_labels, val_labels, test_labels
-    
-    def get_observation_events(
-        self,
-        events: pd.DataFrame,
-        labels: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """
-        Get events within observation window for labeled customers.
-        
-        Args:
-            events: Full events DataFrame
-            labels: Labeled customers DataFrame (output from label_churn)
-            
-        Returns:
-            Events filtered to observation window and labeled customers
-        """
-        obs_start = labels["observation_start"].iloc[0]
-        obs_end = labels["observation_end"].iloc[0]
-        customer_ids = labels["visitorid"].values
-        
-        mask = (
-            (events["timestamp"] >= obs_start) &
-            (events["timestamp"] < obs_end) &
-            (events["visitorid"].isin(customer_ids))
-        )
-        
-        return events[mask].copy()
-    
-    def explain_churn_definition(self) -> str:
-        """
-        Return business-friendly explanation of churn definition.
-        
-        Returns:
-            Markdown-formatted explanation string
-        """
+
+        return events[m].copy()
+
+    def explain(self):
+        """Human-readable explanation."""
+        w = self.w
         return f"""
-## Churn Definition
+## How we define churn
 
-**What is churn?**
-A customer is considered "churned" if they do not make any purchase within 
-{self.windows.churn_days} days after the observation period ends.
+A customer is "churned" if they don't buy anything in the {w.chk} day churn window.
 
-**How we measure it:**
+Setup:
+- Observation: {w.obs} days (build features here)
+- Gap: {w.gap} days (buffer to avoid peeking at future)
+- Check: {w.chk} days (if no purchase = churned)
 
-1. **Observation Window** ({self.windows.observation_days} days):
-   - We look at customer behavior during this period
-   - Build features like purchase frequency, recency, engagement
-   - Only customers with at least 1 transaction are included (active base)
-
-2. **Gap Period** ({self.windows.gap_days} days):
-   - Buffer to prevent data leakage
-   - Ensures features don't accidentally include future information
-
-3. **Churn Window** ({self.windows.churn_days} days):
-   - If customer makes a purchase here → Retained (churned=0)
-   - If no purchase in this window → Churned (churned=1)
-
-**Business interpretation:**
-- A churned customer hasn't purchased in over {self.windows.observation_days + self.windows.gap_days + self.windows.churn_days} days
-- This represents a meaningful drop-off in engagement for an ecommerce platform
-- Targeting these at-risk customers with retention campaigns can save revenue
+So a churned customer hasn't bought anything in {w.obs + w.gap + w.chk}+ days.
+That's a pretty clear signal they've disengaged.
 """
