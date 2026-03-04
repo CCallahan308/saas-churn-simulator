@@ -9,10 +9,10 @@ This package provides:
 - Intervention ROI simulation
 """
 
-from src.churn_definition import ChurnLabeler
+from src.churn_definition import CustomerStateLabeler
 from src.data_loader import DataLoader
 from src.features import FeatureEngineer
-from src.models import ChurnModel
+from src.models import RetentionModel
 from src.segmentation import CustomerSegmenter
 from src.simulator import InterventionSimulator
 
@@ -20,9 +20,10 @@ __version__ = "1.0.0"
 
 __all__ = [
     "DataLoader",
-    "ChurnLabeler",
+    "CustomerStateLabeler",
     "FeatureEngineer",
-    "ChurnModel",
+    "RetentionModel",
     "CustomerSegmenter",
     "InterventionSimulator",
 ]
+
