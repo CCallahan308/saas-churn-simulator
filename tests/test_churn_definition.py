@@ -1,19 +1,19 @@
 # tests for churn labeling
 
-import pandas as pd
-import numpy as np
-import pytest
+import sys
 from datetime import datetime, timedelta
 
-import sys
+import numpy as np
+import pandas as pd
 
 sys.path.insert(0, "..")
 
-from src.churn_definition import ChurnLabeler, Windows as ChurnWindows
+from src.churn_definition import ChurnLabeler
+from src.churn_definition import Windows as ChurnWindows
 
 
 def make_events():
-    """build test events - just returns a df directly, no fixture"""
+    """Build test events - just returns a df directly, no fixture"""
     base = datetime(2024, 1, 1)
     rows = []
 

@@ -1,18 +1,14 @@
 # Data loader for RetailRocket ecommerce dataset
 # handles download from kaggle and caching
 
-import os
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
-from tqdm import tqdm
 
 
 class DataLoader:
-    """
-    Download and load the RetailRocket data.
+    """Download and load the RetailRocket data.
 
     Files:
     - events.csv: user events (view/addtocart/transaction)

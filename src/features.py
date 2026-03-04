@@ -1,16 +1,15 @@
 # Feature engineering for churn prediction.
 # Takes raw events and builds usable features for modeling.
 
-from typing import Optional, List, Dict
 from datetime import timedelta
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+from loguru import logger
 
 
 class FeatureEngineer:
-    """
-    Build features from customer event data.
+    """Build features from customer event data.
 
     Main categories:
     - Recency: days since last activity
@@ -28,10 +27,9 @@ class FeatureEngineer:
         self,
         events: pd.DataFrame,
         labels: pd.DataFrame,
-        include_categories: Optional[List[str]] = None,
+        include_categories: list[str] | None = None,
     ) -> pd.DataFrame:
-        """
-        Build features for the labeled customers.
+        """Build features for the labeled customers.
 
         include_categories lets you pick which feature types to compute.
         If None, does everything.
@@ -56,7 +54,7 @@ class FeatureEngineer:
         )
         obs_events = events[mask].copy()
 
-        print(
+        logger.info(
             f"Building features for {len(customer_ids):,} customers from {len(obs_events):,} events"
         )
 
@@ -95,7 +93,7 @@ class FeatureEngineer:
         # fill missing
         features = self._fill_missing(features)
 
-        print(f"Created {len(features.columns) - 1} features")
+        logger.info(f"Created {len(features.columns) - 1} features")
 
         return features
 
@@ -332,7 +330,7 @@ class FeatureEngineer:
 
         return df
 
-    def get_feature_descriptions(self) -> Dict[str, str]:
+    def get_feature_descriptions(self) -> dict[str, str]:
         """Short descriptions of what each feature means."""
         return {
             "days_view": "days since last view",

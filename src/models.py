@@ -1,27 +1,27 @@
 # ML models for churn prediction.
 # logistic regression, lightgbm, random forest, gradient boosting
 
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass
 import warnings
+from dataclasses import dataclass
+from typing import Any
 
+import mlflow
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.calibration import calibration_curve
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
-    roc_auc_score,
-    precision_recall_curve,
     average_precision_score,
-    confusion_matrix,
     classification_report,
+    confusion_matrix,
+    f1_score,
     precision_score,
     recall_score,
-    f1_score,
+    roc_auc_score,
 )
-from sklearn.calibration import calibration_curve
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.preprocessing import StandardScaler
 
 try:
     import lightgbm as lgb
@@ -48,10 +48,10 @@ class ModelMetrics:
     recall: float
     f1: float
     confusion_matrix: np.ndarray
-    precision_at_k: Dict[int, float]
-    lift_at_k: Dict[int, float]
+    precision_at_k: dict[int, float]
+    lift_at_k: dict[int, float]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "auc_roc": self.auc_roc,
             "avg_precision": self.avg_precision,
@@ -79,16 +79,15 @@ MODEL_CONFIGS = {
 }
 
 
-class ChurnModel:
-    """
-    Wrapper around sklearn/lgb models for churn prediction.
+class RetentionModel:
+    """Wrapper around sklearn/lgb models for churn prediction.
 
     Supports: logistic, lightgbm, random_forest, gradient_boosting
     """
 
     SUPPORTED_MODELS = list(MODEL_CONFIGS.keys()) + ["lightgbm"]
 
-    def __init__(self, model_type: str = "lightgbm", random_state: int = 42, **params):
+    def __init__(self, model_type: str = "lightgbm", random_state: int = 42, track_mlflow: bool = False, **params):
         if model_type not in self.SUPPORTED_MODELS:
             raise ValueError(f"pick from {self.SUPPORTED_MODELS}")
 
@@ -99,10 +98,12 @@ class ChurnModel:
         self.model_type = model_type
         self.random_state = random_state
         self.params = params
+        self.track_mlflow = track_mlflow
         self.model = None
         self.scaler = None
         self.feature_names = None
         self._fitted = False
+        self._mlflow_run = None
 
     def _create_model(self):
         """Make the actual model object."""
@@ -119,7 +120,7 @@ class ChurnModel:
         # use dict lookup for the rest
         return MODEL_CONFIGS[self.model_type](self.random_state, self.params)
 
-    def fit(self, X, y, scale_features: bool = True, feature_names: Optional[List[str]] = None):
+    def fit(self, X, y, scale_features: bool = True, feature_names: list[str] | None = None):
         """Train the model. X can be dataframe or array."""
         self.feature_names = feature_names or (list(X.columns) if hasattr(X, "columns") else None)
 
@@ -131,9 +132,21 @@ class ChurnModel:
             self.scaler = StandardScaler()
             X_arr = self.scaler.fit_transform(X_arr)
 
+        if self.track_mlflow:
+            if mlflow.active_run() is None:
+                self._mlflow_run = mlflow.start_run(run_name=f"{self.model_type}_training")
+            mlflow.log_param("model_type", self.model_type)
+            mlflow.log_param("random_state", self.random_state)
+            mlflow.log_params(self.params)
+            mlflow.log_param("scale_features", scale_features)
+
         self.model = self._create_model()
         self.model.fit(X_arr, y_arr)
         self._fitted = True
+
+        # We leave the MLflow run open here so evaluate() can log metrics to the same run.
+        # It's up to the user to mlflow.end_run() if they started it themselves.
+
         return self
 
     def predict_proba(self, X) -> np.ndarray:
@@ -176,7 +189,7 @@ class ChurnModel:
             prec_at_k[k] = pk
             lift_at_k[k] = pk / base_rate if base_rate > 0 else 0
 
-        return ModelMetrics(
+        metrics = ModelMetrics(
             auc_roc=float(auc),
             avg_precision=float(ap),
             precision=float(prec),
@@ -187,7 +200,22 @@ class ChurnModel:
             lift_at_k=lift_at_k,
         )
 
-    def cross_validate(self, X, y, n_folds: int = 5) -> Dict[str, float]:
+        if self.track_mlflow:
+            mlflow.log_metrics({
+                "auc_roc": float(auc),
+                "avg_precision": float(ap),
+                "precision": float(prec),
+                "recall": float(rec),
+                "f1": float(f1),
+                "prec_at_10": prec_at_k.get(10, 0),
+                "lift_at_10": lift_at_k.get(10, 0),
+            })
+            if self._mlflow_run:
+                mlflow.end_run()
+
+        return metrics
+
+    def cross_validate(self, X, y, n_folds: int = 5) -> dict[str, float]:
         """5-fold CV."""
         X_arr = X.values if hasattr(X, "values") else X
         y_arr = y.values if hasattr(y, "values") else y
@@ -272,7 +300,7 @@ class ChurnModel:
         )
 
     @classmethod
-    def load(cls, path: str) -> "ChurnModel":
+    def load(cls, path: str) -> "RetentionModel":
         """Load pickled model."""
         import joblib
 
@@ -292,7 +320,7 @@ def compare_models(X_train, y_train, X_test, y_test, types=None) -> pd.DataFrame
 
     for t in types:
         try:
-            m = ChurnModel(model_type=t)
+            m = RetentionModel(model_type=t)
             m.fit(X_train, y_train)
             met = m.evaluate(X_test, y_test)
             out.append({"model": t, **met.to_dict()})
@@ -302,9 +330,8 @@ def compare_models(X_train, y_train, X_test, y_test, types=None) -> pd.DataFrame
     return pd.DataFrame(out).sort_values("auc_roc", ascending=False)
 
 
-def print_model_report(model: ChurnModel, X_test, y_test, threshold: float = 0.5) -> str:
-    """
-    Detailed evaluation report.
+def print_model_report(model: RetentionModel, X_test, y_test, threshold: float = 0.5) -> str:
+    """Detailed evaluation report.
     """
     met = model.evaluate(X_test, y_test, threshold)
     y_pred = model.predict(X_test, threshold)

@@ -1,5 +1,4 @@
-"""
-SaaS Churn Simulator - End-to-end subscription churn prediction and intervention toolkit.
+"""SaaS Churn Simulator - End-to-end subscription churn prediction and intervention toolkit.
 
 This package provides:
 - Data loading and preprocessing for RetailRocket ecommerce dataset
@@ -10,8 +9,8 @@ This package provides:
 - Intervention ROI simulation
 """
 
-from src.data_loader import DataLoader
 from src.churn_definition import ChurnLabeler
+from src.data_loader import DataLoader
 from src.features import FeatureEngineer
 from src.models import ChurnModel
 from src.segmentation import CustomerSegmenter

@@ -1,44 +1,39 @@
-# Churn labeling - deciding who "churned"
-# based on time windows: observation -> gap -> churn check
-
-from dataclasses import dataclass
 from datetime import timedelta
-from typing import Optional, Tuple
 
 import pandas as pd
-import numpy as np
+from loguru import logger
+from pydantic import BaseModel, ConfigDict
 
 
-@dataclass
-class Windows:
-    """Time window config for churn labeling."""
+class StateWindows(BaseModel):
+    """Time window config for state transitions (Active vs Inactive)."""
 
     obs: int = 60  # observation days
     gap: int = 7  # buffer
     chk: int = 30  # churn check days
 
+    model_config = ConfigDict(frozen=True)
+
     @property
-    def total(self):
+    def total(self) -> int:
         return self.obs + self.gap + self.chk
 
     def __repr__(self):
-        return f"Windows(obs={self.obs}, gap={self.gap}, check={self.chk})"
+        return f"StateWindows(obs={self.obs}, gap={self.gap}, check={self.chk})"
 
 
-class ChurnLabeler:
-    """
-    Label customers as churned or not.
+class CustomerStateLabeler:
+    """Label customers as churned or not.
 
     Simple rule: no purchase in churn window = churned.
     Only customers with at least one purchase in observation period are labeled.
     """
 
     def __init__(self, windows=None):
-        self.w = windows or Windows()
+        self.w = windows or StateWindows()
 
     def label(self, events, snapshot=None, min_txns=1):
-        """
-        Main labeling function.
+        """Main labeling function.
 
         events: df with timestamp, visitorid, event, itemid, transactionid
         snapshot: reference date (if None, auto-calculated)
@@ -61,9 +56,9 @@ class ChurnLabeler:
         chk_start = snap
         chk_end = snap + timedelta(days=w.chk)
 
-        print(f"obs: {obs_start.date()} to {obs_end.date()}")
-        print(f"gap: {obs_end.date()} to {chk_start.date()}")
-        print(f"check: {chk_start.date()} to {chk_end.date()}")
+        logger.info(f"Observation window: {obs_start.date()} to {obs_end.date()}")
+        logger.info(f"Gap buffer: {obs_end.date()} to {chk_start.date()}")
+        logger.info(f"Check window: {chk_start.date()} to {chk_end.date()}")
 
         # just transactions
         txns = events[events["event"] == "transaction"].copy()
@@ -74,7 +69,7 @@ class ChurnLabeler:
 
         # filter to active customers
         active = obs_cnts[obs_cnts["n_obs"] >= min_txns]["visitorid"].values
-        print(f"active customers: {len(active):,}")
+        logger.info(f"Active customers identified: {len(active):,}")
 
         # check period txns
         chk_txns = txns[(txns["timestamp"] >= chk_start) & (txns["timestamp"] < chk_end)]
@@ -96,7 +91,7 @@ class ChurnLabeler:
         out["chk_end"] = chk_end
 
         rate = out["churned"].mean()
-        print(f"churn rate: {rate:.1%}")
+        logger.info(f"Calculated transition (churn) rate: {rate:.1%}")
 
         return out
 
@@ -115,7 +110,7 @@ class ChurnLabeler:
         val_snap = test_snap - timedelta(days=test_days)
         train_snap = val_snap - timedelta(days=val_days)
 
-        print(f"data: {mn.date()} to {mx.date()} ({total_days}d)")
+        logger.info(f"Dataset span: {mn.date()} to {mx.date()} ({total_days}d)")
 
         tr = self.label(events, snapshot=str(train_snap.date()))
         va = self.label(events, snapshot=str(val_snap.date()))

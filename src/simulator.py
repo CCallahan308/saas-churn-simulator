@@ -1,7 +1,6 @@
 # ROI simulator for churn interventions
 # estimates business impact of retention campaigns
 
-from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 import numpy as np
@@ -39,7 +38,7 @@ class Result:
     cps: float  # cost per save
     be_lift: float  # break-even lift
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "campaign": self.campaign,
             "targeted": self.n_targeted,
@@ -76,8 +75,7 @@ Break-even lift: {self.be_lift:.1%}
 
 
 class InterventionSimulator:
-    """
-    Figure out if a retention campaign makes financial sense.
+    """Figure out if a retention campaign makes financial sense.
 
     usage:
         sim = InterventionSimulator(ltv=100)
@@ -89,8 +87,7 @@ class InterventionSimulator:
         self.ltv = ltv
 
     def run(self, probs, campaign=None, threshold=0.5, top_pct=None, mask=None) -> Result:
-        """
-        Run the simulation.
+        """Run the simulation.
 
         probs: churn probabilities
         campaign: CampaignParams or None for defaults
@@ -158,7 +155,7 @@ class InterventionSimulator:
             be_lift=be,
         )
 
-    def compare(self, probs, scenarios: List[Dict]) -> pd.DataFrame:
+    def compare(self, probs, scenarios: list[dict]) -> pd.DataFrame:
         """Compare multiple scenarios at once."""
         rows = []
         for s in scenarios:
@@ -205,7 +202,7 @@ class InterventionSimulator:
 
         return df
 
-    def sensitivity(self, probs, base=None, threshold=0.5, ranges=None) -> Dict[str, pd.DataFrame]:
+    def sensitivity(self, probs, base=None, threshold=0.5, ranges=None) -> dict[str, pd.DataFrame]:
         """How sensitive is ROI to each parameter?"""
         base = base or CampaignParams()
         ranges = ranges or {
@@ -288,7 +285,7 @@ class InterventionSimulator:
         return df.reset_index(drop=True)
 
 
-def quick_roi(n, churn_rate, ltv, cost=5, lift=0.2, response=0.3) -> Dict:
+def quick_roi(n, churn_rate, ltv, cost=5, lift=0.2, response=0.3) -> dict:
     """Back of envelope calculation."""
     churners = n * churn_rate
     saves = churners * lift * response

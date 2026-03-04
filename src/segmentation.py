@@ -1,8 +1,7 @@
 # Customer segmentation - RFM and clustering
 
-from typing import Dict, List, Optional
-from dataclasses import dataclass
 import operator
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -17,14 +16,14 @@ class SegmentProfile:
     name: str
     size: int
     pct: float
-    churn_risk: Optional[float]
+    churn_risk: float | None
     recency: float
     freq: float
     monetary: float
     desc: str
     action: str
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "segment": self.name,
             "n": self.size,
@@ -38,8 +37,7 @@ class SegmentProfile:
 
 
 class CustomerSegmenter:
-    """
-    Segment customers using RFM or k-means.
+    """Segment customers using RFM or k-means.
     """
 
     # segment rules as (r_min, r_max, f_min, f_max, m_min, m_max)
@@ -97,8 +95,7 @@ class CustomerSegmenter:
         m_col="total_items_purchased",
         q=5,
     ) -> pd.DataFrame:
-        """
-        Compute RFM quintile scores.
+        """Compute RFM quintile scores.
 
         r_col: recency (lower = better, so we invert)
         f_col: frequency (higher = better)

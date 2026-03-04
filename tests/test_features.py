@@ -1,11 +1,11 @@
 # feature engineering tests
 
-import pandas as pd
-import numpy as np
-import pytest
+import sys
 from datetime import datetime, timedelta
 
-import sys
+import numpy as np
+import pandas as pd
+import pytest
 
 sys.path.insert(0, "..")
 
@@ -15,7 +15,7 @@ from src.features import FeatureEngineer
 # using different structure than other test file
 @pytest.fixture
 def events():
-    """sample events for feature tests"""
+    """Sample events for feature tests"""
     base = datetime(2024, 1, 1)
     rows = []
 
