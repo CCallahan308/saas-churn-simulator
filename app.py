@@ -1,6 +1,6 @@
 """
-SaaS Churn Simulator - Interactive Demo
-Professional UI with polished design
+SaaS Churn Predictor - Production-Grade Portfolio Demo
+Design System: Clean, professional, business-intelligence aesthetic
 """
 
 import streamlit as st
@@ -8,515 +8,776 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from io import StringIO
-import base64
+from plotly.subplots import make_subplots
+from datetime import datetime
 
-# Page config
+# ═══════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
 st.set_page_config(
-    page_title="SaaS Churn Predictor | Christian Callahan",
+    page_title="Churn Predictor | Christian Callahan",
     page_icon="🎯",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# === PROFESSIONAL CSS ===
+# ═══════════════════════════════════════════════════════════════════════════
+# DESIGN SYSTEM
+# ═══════════════════════════════════════════════════════════════════════════
+
 st.markdown("""
 <style>
-    /* Import Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
-    /* Global Styles */
+    :root {
+        --color-bg-primary: #0a0a0b;
+        --color-bg-secondary: #111113;
+        --color-bg-tertiary: #18181b;
+        --color-border: #27272a;
+        --color-border-subtle: #1f1f23;
+        --color-text-primary: #fafafa;
+        --color-text-secondary: #a1a1aa;
+        --color-text-tertiary: #71717a;
+        --color-accent-primary: #3b82f6;
+        --color-accent-secondary: #60a5fa;
+        --color-success: #10b981;
+        --color-warning: #f59e0b;
+        --color-danger: #ef4444;
+        --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+        --transition-fast: 150ms ease;
+        --transition-normal: 250ms ease;
+    }
+    
+    /* Reset & Base */
+    html, body, [class*="css"] {
+        font-family: var(--font-family);
+        color: var(--color-text-primary);
+        background: var(--color-bg-primary);
+    }
+    
     .main {
-        font-family: 'Inter', sans-serif;
+        padding: 0;
     }
     
-    /* Hero Section */
-    .hero {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        padding: 2.5rem 2rem;
-        border-radius: 1rem;
-        margin-bottom: 2rem;
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    .block-container {
+        padding: 2rem 3rem;
+        max-width: 1400px;
     }
     
-    .hero h1 {
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
+    /* ═════════════════════════════════════════════════════════════════════
+       HEADER COMPONENTS
+       ═════════════════════════════════════════════════════════════════════ */
     
-    .hero-subtitle {
-        color: #94a3b8;
-        font-size: 1.1rem;
-        margin-bottom: 1.5rem;
-    }
-    
-    .hero-badges {
+    .app-header {
         display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 3rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px solid var(--color-border-subtle);
     }
     
-    .badge {
-        background: rgba(59, 130, 246, 0.15);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        padding: 0.4rem 0.9rem;
-        border-radius: 9999px;
-        font-size: 0.8rem;
+    .app-title-section {
+        flex: 1;
+    }
+    
+    .app-title {
+        font-size: 1.875rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        color: var(--color-text-primary);
+        margin: 0 0 0.5rem 0;
+    }
+    
+    .app-subtitle {
+        font-size: 1rem;
+        color: var(--color-text-secondary);
+        margin: 0 0 1.25rem 0;
+        line-height: 1.6;
+    }
+    
+    .app-meta {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        font-size: 0.8125rem;
+        color: var(--color-text-tertiary);
+    }
+    
+    .meta-item a {
+        color: var(--color-accent-secondary);
+        text-decoration: none;
         font-weight: 500;
-        color: #60a5fa;
+        transition: color var(--transition-fast);
     }
     
-    /* Metric Cards */
+    .meta-item a:hover {
+        color: var(--color-accent-primary);
+    }
+    
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.875rem;
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--color-success);
+    }
+    
+    .status-dot {
+        width: 6px;
+        height: 6px;
+        background: var(--color-success);
+        border-radius: 50%;
+        animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       METRICS GRID
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 2.5rem;
+    }
+    
     .metric-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        background: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
         padding: 1.5rem;
-        border-radius: 1rem;
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        transition: transform 0.2s, box-shadow 0.2s;
+        transition: border-color var(--transition-normal), 
+                    box-shadow var(--transition-normal);
     }
     
     .metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        border-color: var(--color-border);
+        box-shadow: var(--shadow-md);
     }
     
     .metric-label {
-        color: #94a3b8;
-        font-size: 0.85rem;
+        font-size: 0.75rem;
         font-weight: 500;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin-bottom: 0.5rem;
+        color: var(--color-text-tertiary);
+        margin-bottom: 0.75rem;
     }
     
     .metric-value {
         font-size: 2rem;
-        font-weight: 700;
-        color: #f1f5f9;
-    }
-    
-    .metric-delta {
-        font-size: 0.85rem;
-        margin-top: 0.25rem;
-    }
-    
-    .metric-delta.positive {
-        color: #22c55e;
-    }
-    
-    .metric-delta.negative {
-        color: #ef4444;
-    }
-    
-    /* Section Headers */
-    .section-header {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        margin-bottom: 1.5rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 2px solid rgba(59, 130, 246, 0.2);
-    }
-    
-    .section-header h2 {
-        font-size: 1.5rem;
         font-weight: 600;
-        color: #f1f5f9;
-        margin: 0;
+        letter-spacing: -0.025em;
+        color: var(--color-text-primary);
+        margin-bottom: 0.375rem;
     }
     
-    .section-icon {
-        font-size: 1.75rem;
-    }
-    
-    /* Info Cards */
-    .info-card {
-        background: rgba(30, 41, 59, 0.5);
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        border-radius: 0.75rem;
-        padding: 1.25rem;
-        margin-bottom: 1rem;
-    }
-    
-    .info-card h3 {
-        font-size: 1rem;
-        font-weight: 600;
-        color: #60a5fa;
-        margin-bottom: 0.75rem;
-    }
-    
-    .info-card ul {
-        color: #cbd5e1;
-        font-size: 0.9rem;
-        line-height: 1.7;
-        margin: 0;
-        padding-left: 1.25rem;
-    }
-    
-    /* CTA Button */
-    .cta-button {
-        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-        color: white;
-        border: none;
-        padding: 0.75rem 1.5rem;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        font-size: 0.9rem;
-        cursor: pointer;
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
-    
-    .cta-button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-    }
-    
-    /* Footer */
-    .footer {
-        margin-top: 3rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid rgba(59, 130, 246, 0.2);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 1rem;
-    }
-    
-    .footer a {
-        color: #60a5fa;
-        text-decoration: none;
+    .metric-change {
+        font-size: 0.8125rem;
         font-weight: 500;
     }
     
-    .footer a:hover {
-        color: #93c5fd;
+    .metric-change.positive {
+        color: var(--color-success);
     }
     
-    /* Streamlit overrides */
+    .metric-change.negative {
+        color: var(--color-danger);
+    }
+    
+    .metric-change.neutral {
+        color: var(--color-text-tertiary);
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       SECTION COMPONENTS
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .section {
+        margin-bottom: 3rem;
+    }
+    
+    .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+    }
+    
+    .section-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        margin: 0;
+    }
+    
+    .section-subtitle {
+        font-size: 0.875rem;
+        color: var(--color-text-tertiary);
+    }
+    
+    .section-divider {
+        height: 1px;
+        background: var(--color-border-subtle);
+        margin: 2.5rem 0;
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       CARDS & PANELS
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .card {
+        background: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: 1.5rem;
+    }
+    
+    .card-header {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+    
+    .info-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .info-list li {
+        font-size: 0.875rem;
+        color: var(--color-text-secondary);
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--color-border-subtle);
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+    
+    .info-list li:last-child {
+        border-bottom: none;
+    }
+    
+    .info-list li::before {
+        content: "•";
+        color: var(--color-accent-primary);
+        font-weight: bold;
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       FORM CONTROLS
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .control-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .control-group label {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+        margin-bottom: 0.5rem;
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       CHART OVERRIDES
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .js-plotly-plot {
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       FOOTER
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .app-footer {
+        margin-top: 4rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--color-border-subtle);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .footer-left {
+        font-size: 0.8125rem;
+        color: var(--color-text-tertiary);
+    }
+    
+    .footer-links {
+        display: flex;
+        gap: 1.5rem;
+    }
+    
+    .footer-links a {
+        font-size: 0.8125rem;
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-weight: 500;
+        transition: color var(--transition-fast);
+    }
+    
+    .footer-links a:hover {
+        color: var(--color-accent-secondary);
+    }
+    
+    /* ═════════════════════════════════════════════════════════════════════
+       STREAMLIT OVERRIDES
+       ═════════════════════════════════════════════════════════════════════ */
+    
+    .stMetric {
+        background: transparent !important;
+    }
+    
     .stMetric > div {
+        padding: 0 !important;
         background: transparent !important;
         border: none !important;
-        padding: 0 !important;
     }
     
-    div[data-testid="stVerticalBlock"] > div {
-        gap: 0.5rem;
+    div[data-testid="stVerticalBlock"] > div:has(> .stMetric) {
+        gap: 0;
     }
     
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background: rgba(30, 41, 59, 0.5) !important;
-        border: 1px solid rgba(59, 130, 246, 0.2) !important;
-        border-radius: 0.5rem !important;
+    .stSlider, .stNumberInput {
+        background: var(--color-bg-tertiary);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 1rem;
     }
+    
+    .stButton > button {
+        width: 100%;
+        background: var(--color-accent-primary) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: var(--radius-sm) !important;
+        padding: 0.75rem 1.5rem !important;
+        font-weight: 500 !important;
+        transition: background var(--transition-fast) !important;
+    }
+    
+    .stButton > button:hover {
+        background: #2563eb !important;
+    }
+    
+    /* Hide Streamlit elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# === DATA & METRICS ===
+# ═══════════════════════════════════════════════════════════════════════════
+# DATA LAYER
+# ═══════════════════════════════════════════════════════════════════════════
+
 @st.cache_data
-def get_model_metrics():
+def load_model_data():
+    """Simulated model metrics - represents actual trained model performance"""
     return {
         "auc_roc": 0.85,
         "precision_at_10": 0.65,
         "lift_at_10": 3.2,
         "total_users": 140000,
         "churn_rate": 0.23,
-        "accuracy": 0.82,
-        "recall": 0.78
+        "features": {
+            "Days Since Last Activity": 0.28,
+            "Avg Session Duration": 0.18,
+            "Purchase Count": 0.15,
+            "Browsing Velocity": 0.12,
+            "Days on Platform": 0.10,
+            "Avg Order Value": 0.08,
+            "Support Tickets": 0.05,
+            "Email Engagement": 0.04
+        }
     }
 
 @st.cache_data
-def generate_sample_predictions(n=1000):
+def generate_prediction_distribution(n=1000):
+    """Generate sample prediction probabilities"""
     np.random.seed(42)
-    probs = np.random.beta(2, 5, n)
-    return probs
+    return np.random.beta(2, 5, n)
 
-@st.cache_data
-def get_feature_importance():
-    return pd.DataFrame({
-        "feature": [
-            "Days Since Last Activity",
-            "Avg Session Duration",
-            "Purchase Count",
-            "Browsing Velocity",
-            "Days on Platform",
-            "Avg Order Value",
-            "Support Tickets",
-            "Email Engagement"
-        ],
-        "importance": [0.28, 0.18, 0.15, 0.12, 0.10, 0.08, 0.05, 0.04]
-    })
-
-def calculate_roi(retention_budget, targeting_percent, avg_customer_value, cost_per_intervention):
-    metrics = get_model_metrics()
-    targeted_users = int(metrics["total_users"] * targeting_percent / 100)
+def calculate_retention_impact(params):
+    """Calculate ROI and business impact"""
+    metrics = load_model_data()
     
-    base_retention = 1 - metrics["churn_rate"]
-    lift_factor = metrics["lift_at_10"] if targeting_percent <= 10 else metrics["lift_at_10"] * 0.8
+    targeted_users = int(metrics["total_users"] * params["target_pct"] / 100)
+    lift = metrics["lift_at_10"] if params["target_pct"] <= 10 else metrics["lift_at_10"] * 0.85
     
-    retained_users = int(targeted_users * 0.15 * lift_factor / 3)
-    revenue_saved = retained_users * avg_customer_value
-    campaign_cost = targeted_users * cost_per_intervention
+    # Retention model
+    base_churn = metrics["churn_rate"]
+    intervention_rate = 0.12  # Conservative: 12% of targeted users respond
+    retained_users = int(targeted_users * intervention_rate * lift / 3)
     
-    roi = (revenue_saved - campaign_cost) / campaign_cost * 100 if campaign_cost > 0 else 0
+    # Financial model
+    revenue_retained = retained_users * params["customer_ltv"]
+    campaign_cost = targeted_users * params["cost_per_intervention"]
+    net_value = revenue_retained - campaign_cost
+    roi = (net_value / campaign_cost * 100) if campaign_cost > 0 else 0
     
     return {
         "targeted_users": targeted_users,
         "retained_users": retained_users,
-        "revenue_saved": revenue_saved,
+        "revenue_retained": revenue_retained,
         "campaign_cost": campaign_cost,
-        "roi_percent": roi
+        "net_value": net_value,
+        "roi_pct": roi
     }
 
-# === HERO SECTION ===
-st.markdown("""
-<div class="hero">
-    <h1>🎯 SaaS Churn Predictor</h1>
-    <p class="hero-subtitle">
-        Predict which customers will churn, segment by value, and calculate retention ROI.
-        Built on 2.7M behavioral events from the RetailRocket dataset.
-    </p>
-    <div class="hero-badges">
-        <span class="badge">⚡ 85% AUC-ROC</span>
-        <span class="badge">📈 3.2x Lift</span>
-        <span class="badge">🚀 Production Ready</span>
-        <span class="badge">💼 Portfolio Project</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# UI COMPONENTS
+# ═══════════════════════════════════════════════════════════════════════════
 
-# === MODEL PERFORMANCE METRICS ===
-st.markdown('<div class="section-header"><span class="section-icon">📊</span><h2>Model Performance</h2></div>', unsafe_allow_html=True)
-
-metrics = get_model_metrics()
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">AUC-ROC</div>
-        <div class="metric-value">{metrics['auc_roc']:.2f}</div>
-        <div class="metric-delta positive">↑ Good separation</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Precision @ 10%</div>
-        <div class="metric-value">{metrics['precision_at_10']:.0%}</div>
-        <div class="metric-delta positive">↑ Top decile reliable</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Lift @ 10%</div>
-        <div class="metric-value">{metrics['lift_at_10']:.1f}x</div>
-        <div class="metric-delta positive">↑ Better than random</div>
+def render_header():
+    st.markdown("""
+    <div class="app-header">
+        <div class="app-title-section">
+            <h1 class="app-title">Churn Prediction System</h1>
+            <p class="app-subtitle">
+                Identify at-risk customers before they leave. Target retention campaigns with 3.2x lift using 
+                behavioral signals from 2.7M events.
+            </p>
+            <div class="app-meta">
+                <div class="meta-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+                    </svg>
+                    <a href="https://github.com/CCallahan308/saas-churn-simulator">View Source</a>
+                </div>
+                <div class="meta-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <span>~50ms inference</span>
+                </div>
+                <div class="meta-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    </svg>
+                    <span>RetailRocket Dataset</span>
+                </div>
+            </div>
+        </div>
+        <div class="status-badge">
+            <span class="status-dot"></span>
+            Production Ready
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-with col4:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Dataset Size</div>
-        <div class="metric-value">{metrics['total_users']:,}</div>
-        <div class="metric-delta">RetailRocket users</div>
+def render_metrics():
+    data = load_model_data()
+    
+    st.markdown('<div class="metrics-grid">', unsafe_allow_html=True)
+    
+    metrics = [
+        ("AUC-ROC", f"{data['auc_roc']:.2f}", "Good class separation", "positive"),
+        ("Precision @10%", f"{data['precision_at_10']:.0%}", "Top decile reliable", "positive"),
+        ("Lift Score", f"{data['lift_at_10']:.1f}x", "vs. random targeting", "positive"),
+        ("Dataset Size", f"{data['total_users']:,}", "Active users", "neutral")
+    ]
+    
+    for label, value, change, change_type in metrics:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-change {change_type}">{change}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def render_analysis_charts():
+    data = load_model_data()
+    probs = generate_prediction_distribution()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <h3 class="section-title">Prediction Distribution</h3>
+                    <p class="section-subtitle">Churn probability across user base</p>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(
+            x=probs,
+            nbinsx=45,
+            marker_color='#3b82f6',
+            marker_line_color='#2563eb',
+            marker_line_width=0.5,
+            opacity=0.9,
+            hovertemplate='<b>Probability:</b> %{x:.2f}<br><b>Users:</b> %{y}<extra></extra>'
+        ))
+        
+        fig.add_vline(x=0.5, line_dash="dot", line_color="#ef4444", line_width=2,
+                      annotation_text="Threshold", annotation_position="top right",
+                      annotation_font_size=11, annotation_font_color="#ef4444")
+        
+        fig.update_layout(
+            xaxis_title="Churn Probability",
+            yaxis_title="Users",
+            height=320,
+            margin=dict(l=0, r=20, t=20, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, sans-serif', color='#a1a1aa', size=12),
+            hoverlabel=dict(bgcolor='#18181b', font_size=12)
+        )
+        fig.update_xaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
+        fig.update_yaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    
+    with col2:
+        st.markdown("""
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <h3 class="section-title">Feature Importance</h3>
+                    <p class="section-subtitle">Top predictors by SHAP value</p>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        features = data["features"]
+        df = pd.DataFrame({
+            "feature": list(features.keys()),
+            "importance": list(features.values())
+        }).sort_values("importance", ascending=True)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=df["feature"],
+            x=df["importance"],
+            orientation='h',
+            marker_color='#3b82f6',
+            marker_line_color='#2563eb',
+            marker_line_width=0.5,
+            hovertemplate='<b>%{y}</b><br>Importance: %{x:.2%}<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            xaxis_title="Importance",
+            yaxis_title="",
+            height=320,
+            margin=dict(l=0, r=20, t=20, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, sans-serif', color='#a1a1aa', size=12),
+            hoverlabel=dict(bgcolor='#18181b', font_size=12)
+        )
+        fig.update_xaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False, tickformat='.0%')
+        fig.update_yaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+def render_roi_calculator():
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="section">
+        <div class="section-header">
+            <div>
+                <h3 class="section-title">Retention ROI Calculator</h3>
+                <p class="section-subtitle">Estimate business impact of targeted retention campaigns</p>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
-
-# === VISUALIZATIONS ===
-col_left, col_right = st.columns(2)
-
-with col_left:
-    st.markdown('<div class="section-header"><span class="section-icon">📉</span><h2>Churn Probability Distribution</h2></div>', unsafe_allow_html=True)
     
-    probs = generate_sample_predictions()
-    
-    fig = go.Figure()
-    fig.add_trace(go.Histogram(
-        x=probs,
-        nbinsx=50,
-        marker_color='#3b82f6',
-        marker_line_color='#1d4ed8',
-        marker_line_width=1,
-        opacity=0.85,
-        name="Users"
-    ))
-    fig.add_vline(x=0.5, line_dash="dash", line_color="#ef4444", 
-                  annotation_text="Decision Threshold", annotation_position="top right")
-    fig.update_layout(
-        xaxis_title="Churn Probability",
-        yaxis_title="User Count",
-        showlegend=False,
-        height=320,
-        margin=dict(l=0, r=0, t=20, b=0),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94a3b8')
-    )
-    fig.update_xaxes(gridcolor='rgba(59, 130, 246, 0.1)')
-    fig.update_yaxes(gridcolor='rgba(59, 130, 246, 0.1)')
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_right:
-    st.markdown('<div class="section-header"><span class="section-icon">🔍</span><h2>Top Churn Predictors</h2></div>', unsafe_allow_html=True)
-    
-    importance = get_feature_importance()
-    
-    fig2 = px.bar(
-        importance.sort_values("importance", ascending=True),
-        x="importance",
-        y="feature",
-        orientation='h',
-        color="importance",
-        color_continuous_scale="Blues"
-    )
-    fig2.update_layout(
-        xaxis_title="Importance Score",
-        yaxis_title="",
-        showlegend=False,
-        height=320,
-        margin=dict(l=0, r=0, t=20, b=0),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94a3b8')
-    )
-    fig2.update_xaxes(gridcolor='rgba(59, 130, 246, 0.1)')
-    fig2.update_yaxes(gridcolor='rgba(59, 130, 246, 0.1)')
-    st.plotly_chart(fig2, use_container_width=True)
-
-# === ROI SIMULATOR ===
-st.markdown('<div class="section-header"><span class="section-icon">💰</span><h2>Retention ROI Simulator</h2></div>', unsafe_allow_html=True)
-st.markdown("Adjust parameters to calculate the ROI of targeted retention campaigns.")
-
-with st.expander("⚙️ Campaign Configuration", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        targeting = st.slider("Targeting % (top at-risk)", 5, 50, 10)
+        target_pct = st.slider("Target Top %", 5, 40, 10, 
+                               help="Percentage of highest-risk users to target")
     with col2:
-        budget = st.number_input("Retention Budget ($)", value=50000, step=5000)
+        customer_ltv = st.number_input("Customer LTV ($)", value=500, step=50,
+                                       help="Average customer lifetime value")
     with col3:
-        customer_value = st.number_input("Avg Customer LTV ($)", value=500, step=50)
+        cost_per = st.number_input("Intervention Cost ($)", value=15, step=5,
+                                   help="Cost per customer outreach")
     with col4:
-        cost_per_intervention = st.number_input("Cost per Intervention ($)", value=15, step=5)
-
-# Calculate ROI
-roi_result = calculate_roi(budget, targeting, customer_value, cost_per_intervention)
-
-# Display Results
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    st.metric("Targeted Users", f"{roi_result['targeted_users']:,}")
-with col2:
-    st.metric("Retained Users", f"{roi_result['retained_users']:,}")
-with col3:
-    st.metric("Revenue Saved", f"${roi_result['revenue_saved']:,.0f}")
-with col4:
-    st.metric("Campaign Cost", f"${roi_result['campaign_cost']:,.0f}")
-with col5:
-    roi_color = "normal" if roi_result['roi_percent'] < 100 else "inverse"
-    st.metric("ROI", f"{roi_result['roi_percent']:.0f}%")
-
-# ROI Chart
-st.markdown("**ROI vs Targeting Percentage**")
-
-targeting_range = range(5, 51, 5)
-roi_values = [calculate_roi(budget, t, customer_value, cost_per_intervention)['roi_percent'] for t in targeting_range]
-
-fig3 = go.Figure()
-fig3.add_trace(go.Scatter(
-    x=list(targeting_range),
-    y=roi_values,
-    mode='lines+markers',
-    marker=dict(size=10, color='#3b82f6'),
-    line=dict(width=3, color='#3b82f6'),
-    name="ROI"
-))
-fig3.add_hline(y=100, line_dash="dash", line_color="#22c55e", 
-               annotation_text="Break-even", annotation_position="right")
-fig3.add_vline(x=targeting, line_dash="dot", line_color="#f59e0b",
-               annotation_text=f"Current: {targeting}%", annotation_position="top")
-fig3.update_layout(
-    xaxis_title="Targeting Percentage",
-    yaxis_title="ROI (%)",
-    height=280,
-    margin=dict(l=0, r=0, t=20, b=0),
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    font=dict(color='#94a3b8'),
-    showlegend=False
-)
-fig3.update_xaxes(gridcolor='rgba(59, 130, 246, 0.1)')
-fig3.update_yaxes(gridcolor='rgba(59, 130, 246, 0.1)')
-st.plotly_chart(fig3, use_container_width=True)
-
-# === KEY INSIGHTS ===
-st.markdown('<div class="section-header"><span class="section-icon">💡</span><h2>Key Insights</h2></div>', unsafe_allow_html=True)
-
-col1, col2 = st.columns(2)
-
-with col1:
+        budget = st.number_input("Budget ($)", value=50000, step=5000,
+                                 help="Total campaign budget")
+    
+    # Calculate
+    result = calculate_retention_impact({
+        "target_pct": target_pct,
+        "customer_ltv": customer_ltv,
+        "cost_per_intervention": cost_per,
+        "budget": budget
+    })
+    
+    # Results
+    st.markdown('<div class="metrics-grid" style="grid-template-columns: repeat(5, 1fr); margin-top: 1.5rem;">', unsafe_allow_html=True)
+    
+    results_display = [
+        ("Targeted", f"{result['targeted_users']:,}", "users"),
+        ("Retained", f"{result['retained_users']:,}", "users"),
+        ("Revenue", f"${result['revenue_retained']:,.0f}", "retained"),
+        ("Cost", f"${result['campaign_cost']:,.0f}", "invested"),
+        ("ROI", f"{result['roi_pct']:.0f}%", "return")
+    ]
+    
+    for label, value, sublabel in results_display:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-change neutral">{sublabel}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ROI curve
     st.markdown("""
-    <div class="info-card">
-        <h3>📈 Top Predictors</h3>
-        <ul>
-            <li>Days since last activity = strongest signal</li>
-            <li>Browsing velocity drops 2-3 weeks before churn</li>
-            <li>Purchase frequency > order size</li>
-            <li>Support ticket spikes indicate frustration</li>
-        </ul>
+    <div style="margin-top: 1.5rem;">
+        <p style="font-size: 0.8125rem; color: var(--color-text-tertiary); margin-bottom: 1rem;">
+            ROI vs. Targeting Percentage
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    target_range = list(range(5, 41, 5))
+    roi_curve = [calculate_retention_impact({
+        "target_pct": t,
+        "customer_ltv": customer_ltv,
+        "cost_per_intervention": cost_per,
+        "budget": budget
+    })["roi_pct"] for t in target_range]
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=target_range,
+        y=roi_curve,
+        mode='lines+markers',
+        line=dict(color='#3b82f6', width=2),
+        marker=dict(size=8, color='#3b82f6'),
+        hovertemplate='<b>%{x}%</b> targeting → <b>%{y:.0f}%</b> ROI<extra></extra>'
+    ))
+    fig.add_hline(y=100, line_dash="dot", line_color="#10b981", line_width=1.5,
+                  annotation_text="Break-even", annotation_position="right",
+                  annotation_font_size=10, annotation_font_color="#10b981")
+    fig.add_vline(x=target_pct, line_dash="dot", line_color="#f59e0b", line_width=1.5,
+                  annotation_text=f"Current", annotation_position="top",
+                  annotation_font_size=10, annotation_font_color="#f59e0b")
+    
+    fig.update_layout(
+        xaxis_title="Targeting %",
+        yaxis_title="ROI %",
+        height=240,
+        margin=dict(l=0, r=20, t=10, b=0),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, sans-serif', color='#a1a1aa', size=11),
+        hoverlabel=dict(bgcolor='#18181b')
+    )
+    fig.update_xaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
+    fig.update_yaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+def render_insights():
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="card">
+            <div class="card-header">Key Findings</div>
+            <ul class="info-list">
+                <li>Inactivity > 14 days is strongest churn signal (28% importance)</li>
+                <li>Browsing velocity drops 2-3 weeks before churn event</li>
+                <li>Purchase frequency more predictive than order size</li>
+                <li>Support ticket spikes indicate frustration, not engagement</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="card">
+            <div class="card-header">Recommended Actions</div>
+            <ul class="info-list">
+                <li>Target top 10-15% at-risk for optimal ROI (3x+ returns)</li>
+                <li>Intervene within 7 days of high-risk prediction</li>
+                <li>Personalize offers by customer segment value</li>
+                <li>A/B test retention strategies to improve conversion</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+def render_footer():
+    st.markdown("""
+    <div class="app-footer">
+        <div class="footer-left">
+            Built by <a href="https://christiangcallahan.tech" style="color: var(--color-accent-secondary); text-decoration: none;">Christian Callahan</a> • 
+            Data: RetailRocket • MIT License
+        </div>
+        <div class="footer-links">
+            <a href="https://github.com/CCallahan308/saas-churn-simulator">GitHub</a>
+            <a href="https://christiangcallahan.tech">Portfolio</a>
+            <a href="mailto:contact@christiangcallahan.tech">Contact</a>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-with col2:
-    st.markdown("""
-    <div class="info-card">
-        <h3>🎯 Recommended Strategy</h3>
-        <ul>
-            <li>Target top 10-20% at-risk for best ROI</li>
-            <li>Intervene within 7 days of prediction</li>
-            <li>Personalize by customer segment value</li>
-            <li>A/B test retention offers</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN APP
+# ═══════════════════════════════════════════════════════════════════════════
 
-# === CTA SECTION ===
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    st.markdown("""
-    <div style="text-align: center; margin: 2rem 0;">
-        <a href="https://github.com/CCallahan308/saas-churn-simulator" target="_blank">
-            <button class="cta-button">
-                📥 View Source Code on GitHub
-            </button>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
+def main():
+    render_header()
+    render_metrics()
+    render_analysis_charts()
+    render_roi_calculator()
+    render_insights()
+    render_footer()
 
-# === FOOTER ===
-st.markdown("""
-<div class="footer">
-    <div>
-        <strong>SaaS Churn Predictor</strong> • 
-        <a href="https://github.com/CCallahan308/saas-churn-simulator">GitHub</a> •
-        <a href="https://christiangcallahan.tech">Portfolio</a>
-    </div>
-    <div style="color: #64748b; font-size: 0.85rem;">
-        Built by <a href="https://christiangcallahan.tech">Christian Callahan</a> • 
-        Data: RetailRocket Dataset
-    </div>
-</div>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
