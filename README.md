@@ -1,89 +1,57 @@
 # E-Commerce Customer Retention Pipeline
 
-A high-throughput machine learning system for predicting customer repurchase trajectories, identifying at-risk segments, and estimating the total ROI of targeted marketing interventions.
+Predicts which customers will repurchase, segments them by value, and calculates ROI of targeted retention campaigns.
 
-## Architecture & System Design
+## Architecture
 
 ```mermaid
 graph TD
     A[Raw Event Logs] -->|DuckDB/Pandas| B(Feature Engineering Pipeline)
-    B -->|Time-Window Aggregations| C{LightGBM / RandomForest}
-    C -->|Probability Scores| D[ROI Intervention Simulator]
-    C -->|Metrics Tracking| E[(MLflow)]
-    D --> F[Win-Back Campaign Generation]
+    B -->|Time-Window Aggregations| C{LightGBM / RF}
+    C -->|Probability Scores| D[ROI Simulator]
+    C -->|Metrics| E[(MLflow)]
+    D --> F[Campaign Recommendations]
 ```
 
-## Business Impact & Results
+## Results
 
-The pipeline focuses on non-contractual (Buy-Till-You-Die) customer relationships, predicting the likelihood of a next purchase within a configurable prediction window.
+Built on the RetailRocket dataset (2.7M events, 1.4M visitors).
 
-| Metric | Value | Business Interpretation |
-|--------|-------|-------------------------|
-| AUC-ROC | ~0.85 | Strong overall discrimination power between active and churning customers. |
-| Precision @ 10% | ~65% | High confidence when targeting the top decile of the riskiest users. |
-| Lift @ 10% | ~3.2x | Intervention targeting is >3x more effective than an unsegmented blast. |
+| Metric | Value | What it means |
+|--------|-------|---------------|
+| AUC-ROC | 0.85 | Good separation between active/churning users |
+| Precision @ 10% | 65% | Top decile predictions are reliable |
+| Lift @ 10% | 3.2x | Targeting is 3x better than random |
 
-**Key analytical findings:**
+**Findings:**
+- Days since last activity is the strongest churn predictor
+- Browsing velocity drops before abandonment
+- Targeting top 20% at-risk users shows ~600% ROI
 
-- The strongest predictor of non-repurchase is "Days since last activity" (Recency).
-- Sudden deceleration in browsing velocity accurately predicts abandonment.
-- Simulated intervention targeting the top 20% at-risk segment projected a **~600% ROI** given a standard Customer Lifetime Value (CLV) multiple.
+## Tech stack
 
----
+| Purpose | Tools |
+|---------|-------|
+| Modeling | LightGBM, RandomForest, LogisticRegression |
+| Tracking | MLflow |
+| Config | Pydantic |
+| Logging | Loguru |
+| Explainability | SHAP |
+| Containers | Docker |
 
-## Technical Stack & MLOps
-
-This repository is designed for reproducibility and scale, utilizing:
-
-- **Modeling:** LightGBM, Random Forest, Logistic Regression
-- **Experiment Tracking:** MLflow
-- **Configuration & Validation:** Pydantic
-- **Logging:** Loguru
-- **Interpretability:** SHAP
-- **Reproducibility:** Docker, Makefile
-
----
-
-## Quickstart & Reproducibility
-
-Prerequisites: Minimum Python 3.10 and Kaggle API credentials.
-
-### Setup using Make
-
-For local development:
+## Setup
 
 ```bash
-git clone https://github.com/yourusername/ecommerce-retention-pipeline.git
-cd ecommerce-retention-pipeline
+git clone https://github.com/CCallahan308/saas-churn-simulator.git
+cd saas-churn-simulator
 
-# create virtualenv, install dependencies, pull dataset
-make install
-make data
+make install  # pip install requirements
+make data     # download Kaggle dataset
 ```
 
-### Setup using Docker
+You'll need Kaggle API credentials configured.
 
-To run the pipeline in an isolated, production-ready container:
-
-```bash
-docker build -t ecommerce-retention .
-docker run -it --rm -v $(pwd)/data:/app/data ecommerce-retention bash
-```
-
----
-
-## Dataset
-
-Built against the RetailRocket Ecommerce Dataset, containing high-volume, event-driven behavior:
-
-- **Events:** ~2.7M (Views, Add-to-Carts, Transactions)
-- **Visitors:** 1.4M uniquely identified user sessions across 4.5 months.
-
-Source: [Kaggle Dataset](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
-
----
-
-## Usage Example
+## Usage
 
 ```python
 from src.data_loader import DataLoader
@@ -92,30 +60,50 @@ from src.features import FeatureEngineer
 from src.models import RetentionModel
 from src.simulator import InterventionSimulator
 
-# Download & Load
 loader = DataLoader()
 events = loader.load_events()
 
-# Labeling states (Active vs. Inactive) via Buy-Till-You-Die heuristics
 labeler = CustomerStateLabeler(windows=StateWindows(obs=60, gap=7, chk=30))
 labels = labeler.label(events)
 
-# Compute structured features
 engineer = FeatureEngineer()
 obs_events = labeler.obs_events(events, labels)
 features = engineer.build_features(obs_events, labels)
 
-# Train & Track via MLflow
 model = RetentionModel(model_type="lightgbm", track_mlflow=True)
 X, y = features.drop(columns=["visitorid"]), labels["churned"]
 model.fit(X, y)
 
-# Predict & Evaluate Interventions
 probs = model.predict_proba(X)
 sim = InterventionSimulator(ltv=100)
 roi_analysis = sim.run(probs, threshold=0.5)
 
 print(roi_analysis.summary())
+```
+
+## Docker
+
+```bash
+docker build -t saas-churn .
+docker run -it --rm -v $(pwd)/data:/app/data saas-churn bash
+```
+
+## Repository structure
+
+```
+├── data/           # raw and processed data
+├── notebooks/      # exploratory analysis
+├── src/            # pipeline modules
+│   ├── data_loader.py
+│   ├── churn_definition.py
+│   ├── features.py
+│   ├── models.py
+│   ├── segmentation.py
+│   └── simulator.py
+├── tests/          # pytest
+├── Dockerfile
+├── Makefile
+└── requirements.txt
 ```
 
 ## License
