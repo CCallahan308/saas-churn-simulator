@@ -2,7 +2,7 @@
 
 Predicts which customers will repurchase, segments them by value, and calculates ROI of targeted retention campaigns.
 
-**[🔴 Live Demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** — Try the interactive simulator
+**[🔴 Live Demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** - Try the interactive simulator
 
 ---
 
