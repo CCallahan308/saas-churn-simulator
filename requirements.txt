@@ -29,6 +29,3 @@ ruff>=0.1.0
 mlflow>=2.7.0
 loguru>=0.7.2
 pydantic>=2.4.0
-optuna>=3.4.0
-fastapi>=0.103.0
-uvicorn>=0.23.0

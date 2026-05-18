@@ -195,12 +195,18 @@ class CustomerSegmenter:
 
             risk = sub["cp"].mean() if "cp" in sub.columns else None
 
-            # try different column names
-            rec = sub.get(
-                "days_since_last_purchase", sub.get("days_since_any", pd.Series([0]))
-            ).mean()
-            freq = sub.get("transaction_count", sub.get("total_events", pd.Series([0]))).mean()
-            mon = sub.get("total_items_purchased", pd.Series([0])).mean()
+            # try different column names with safe access
+            rec = (
+                sub["days_since_last_purchase"].mean()
+                if "days_since_last_purchase" in sub.columns
+                else (sub["days_since_any"].mean() if "days_since_any" in sub.columns else 0.0)
+            )
+            freq = (
+                sub["transaction_count"].mean()
+                if "transaction_count" in sub.columns
+                else (sub["total_events"].mean() if "total_events" in sub.columns else 0.0)
+            )
+            mon = sub["total_items_purchased"].mean() if "total_items_purchased" in sub.columns else 0.0
 
             desc = self.SEG_INFO.get(seg, f"cluster {seg}")
             act = self.ACTIONS.get(seg, "analyze and target")

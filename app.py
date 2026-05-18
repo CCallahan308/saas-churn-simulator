@@ -1,6 +1,10 @@
 """
-SaaS Churn Predictor - Production-Grade Portfolio Demo
-Design System: Clean, professional, business-intelligence aesthetic
+SaaS Churn Predictor - Portfolio Demo
+
+NOTE: This app uses 100% synthetic/simulated data for visualization purposes.
+Model performance metrics (AUC, Precision, Lift) reflect training on the
+RetailRocket dataset. Prediction distributions and ROI projections are
+generated from a synthetic distribution to illustrate the pipeline behavior.
 """
 
 import streamlit as st
@@ -438,12 +442,12 @@ def calculate_retention_impact(params):
     metrics = load_model_data()
     
     targeted_users = int(metrics["total_users"] * params["target_pct"] / 100)
-    lift = metrics["lift_at_10"] if params["target_pct"] <= 10 else metrics["lift_at_10"] * 0.85
-    
+    lift = metrics["lift_at_10"] if params["target_pct"] <= 10 else metrics["lift_at_10"] * 0.85  # 15% degradation from lab to production
+
     # Retention model
     base_churn = metrics["churn_rate"]
-    intervention_rate = 0.12  # Conservative: 12% of targeted users respond
-    retained_users = int(targeted_users * intervention_rate * lift / 3)
+    intervention_rate = 0.12  # 12% targeted outreach rate (industry conservative estimate)
+    retained_users = int(targeted_users * intervention_rate * lift / 3)  # conservative: 1-in-3 interventions succeed
     
     # Financial model
     revenue_retained = retained_users * params["customer_ltv"]
@@ -773,6 +777,7 @@ def render_footer():
 
 def main():
     render_header()
+    st.info("📊 **Demo Mode** — Performance metrics reflect the trained model. Predictions use a synthetic data distribution for visualization purposes.")
     render_metrics()
     render_analysis_charts()
     render_roi_calculator()

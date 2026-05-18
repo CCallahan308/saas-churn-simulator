@@ -143,7 +143,7 @@ class FeatureEngineer:
         # active days
         active = (
             events.groupby("visitorid")
-            .apply(lambda x: x["timestamp"].dt.date.nunique())
+            .apply(lambda x: x["timestamp"].dt.date.nunique(), include_groups=False)
             .reset_index(name="active_days")
         )
 
