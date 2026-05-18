@@ -164,7 +164,7 @@ def test_single_evt():
             "transactionid": [1000],
         }
     )
-    l = pd.DataFrame(
+    labels = pd.DataFrame(
         {
             "visitorid": [1],
             "churned": [0],
@@ -172,7 +172,7 @@ def test_single_evt():
             "observation_end": pd.to_datetime("2024-02-01"),
         }
     )
-    f = FeatureEngineer().build_features(e, l)
+    f = FeatureEngineer().build_features(e, labels)
     assert len(f) == 1
     assert f.isna().sum().sum() == 0
 
@@ -187,7 +187,7 @@ def test_no_evts_in_window():
             "transactionid": [1000],
         }
     )
-    l = pd.DataFrame(
+    labels = pd.DataFrame(
         {
             "visitorid": [1],
             "churned": [0],
@@ -195,7 +195,7 @@ def test_no_evts_in_window():
             "observation_end": pd.to_datetime("2024-02-01"),
         }
     )
-    f = FeatureEngineer().build_features(e, l)
+    f = FeatureEngineer().build_features(e, labels)
     assert len(f) == 1
 
 

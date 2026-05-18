@@ -10,10 +10,7 @@ generated from a synthetic distribution to illustrate the pipeline behavior.
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -445,7 +442,6 @@ def calculate_retention_impact(params):
     lift = metrics["lift_at_10"] if params["target_pct"] <= 10 else metrics["lift_at_10"] * 0.85  # 15% degradation from lab to production
 
     # Retention model
-    base_churn = metrics["churn_rate"]
     intervention_rate = 0.12  # 12% targeted outreach rate (industry conservative estimate)
     retained_users = int(targeted_users * intervention_rate * lift / 3)  # conservative: 1-in-3 interventions succeed
     
@@ -708,7 +704,7 @@ def render_roi_calculator():
                   annotation_text="Break-even", annotation_position="right",
                   annotation_font_size=10, annotation_font_color="#10b981")
     fig.add_vline(x=target_pct, line_dash="dot", line_color="#f59e0b", line_width=1.5,
-                  annotation_text=f"Current", annotation_position="top",
+                  annotation_text="Current", annotation_position="top",
                   annotation_font_size=10, annotation_font_color="#f59e0b")
     
     fig.update_layout(
