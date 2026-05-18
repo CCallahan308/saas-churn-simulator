@@ -126,6 +126,9 @@ class FeatureEngineer:
 
     def _build_frequency(self, events: pd.DataFrame) -> pd.DataFrame:
         """Count-based features."""
+        if events.empty:
+            return pd.DataFrame(columns=["visitorid"])
+
         # event counts by type
         evt_counts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
         evt_counts.columns = [f"{c}_count" for c in evt_counts.columns]
@@ -140,13 +143,11 @@ class FeatureEngineer:
         # sessions
         sess = self._compute_sessions(events)
 
-        # active days — rename() before reset_index() works on both Series and
-        # empty DataFrame (reset_index(name=) is Series-only in pandas 2.x)
+        # active days
         active = (
             events.groupby("visitorid")
             .apply(lambda x: x["timestamp"].dt.date.nunique(), include_groups=False)
-            .rename("active_days")
-            .reset_index()
+            .reset_index(name="active_days")
         )
 
         result = evt_counts.merge(uniq, on="visitorid", how="outer")
