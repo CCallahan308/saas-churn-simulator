@@ -31,4 +31,4 @@ loguru>=0.7.2
 pydantic>=2.4.0
 optuna>=3.4.0
 fastapi>=0.103.0
-uvicorn>=0.23.0
+uvicorn>=0.47.0
