@@ -8,8 +8,8 @@ import pandas as pd
 
 sys.path.insert(0, "..")
 
-from src.churn_definition import ChurnLabeler
-from src.churn_definition import Windows as ChurnWindows
+from src.churn_definition import CustomerStateLabeler as ChurnLabeler
+from src.churn_definition import StateWindows as ChurnWindows
 
 
 def make_events():
@@ -133,7 +133,7 @@ class TestLabeler:
         evts = make_events()
         lbl = ChurnLabeler()
         out = lbl.label(evts, snapshot="2024-03-01")
-        for c in ["obs_start", "obs_end", "chk_start", "chk_end"]:
+        for c in ["observation_start", "observation_end", "checkpoint_start", "checkpoint_end"]:
             assert c in out.columns
 
     def test_obs_events_filtering(self):
@@ -142,8 +142,8 @@ class TestLabeler:
         labels = lbl.label(evts, snapshot="2024-03-01")
         obs = lbl.obs_events(evts, labels)
 
-        start = labels["obs_start"].iloc[0]
-        end = labels["obs_end"].iloc[0]
+        start = labels["observation_start"].iloc[0]
+        end = labels["observation_end"].iloc[0]
         assert (obs["timestamp"] >= start).all()
         assert (obs["timestamp"] < end).all()
 
