@@ -1,10 +1,14 @@
-# E-Commerce Customer Retention Pipeline
+# SaaS Churn Simulator
 
-Predicts which customers will repurchase, segments them by value, and calculates ROI of targeted retention campaigns.
+A generalizable churn prediction and retention-ROI simulator built for SaaS-style subscription products. Demonstrated on the RetailRocket dataset (2.7M events, 1.4M visitors) — the same logic transfers directly to any event-driven product where users have observable engagement and recurring billing.
 
-**[🔴 Live Demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** - Try the interactive simulator
+**[Live Demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** • Try the interactive simulator
 
 ---
+
+## What this does
+
+Predicts which subscribers will churn, segments them by lifetime value, and tells you which segments are worth spending retention budget on. Built so the simulator works on any event-log dataset — swap the loader and the same pipeline runs.
 
 ## Architecture
 
@@ -19,8 +23,6 @@ graph TD
 
 ## Results
 
-Built on the RetailRocket dataset (2.7M events, 1.4M visitors).
-
 | Metric | Value | What it means |
 |--------|-------|---------------|
 | AUC-ROC | 0.85 | Good separation between active/churning users |
@@ -31,6 +33,10 @@ Built on the RetailRocket dataset (2.7M events, 1.4M visitors).
 - Days since last activity is the strongest churn predictor
 - Browsing velocity drops before abandonment
 - Targeting top 20% at-risk users shows ~600% ROI
+
+## Why a simulator, not just a model
+
+Most churn projects stop at "here's the AUC." Real businesses need the next step: *given a model, how much should we spend on retention and on whom?* The ROI simulator runs that question across cost-per-intervention scenarios and LTV assumptions, so you can compare blast-everyone vs. target-the-top-decile.
 
 ## Tech stack
 
@@ -109,6 +115,11 @@ docker run -it --rm -v $(pwd)/data:/app/data saas-churn bash
 ├── Makefile
 └── requirements.txt
 ```
+
+## Related Work
+
+- [SignalForge](https://github.com/CCallahan308/signalforge) — same problem space, telco data, deeper statistical analysis (bootstrap CIs, p-values, calibration)
+- [E-Commerce Retention & Growth](https://github.com/CCallahan308/ecommerce-retention-growth) — sister project using XGBoost on the KKBox music subscription dataset
 
 ## License
 
