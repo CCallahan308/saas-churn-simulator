@@ -140,11 +140,13 @@ class FeatureEngineer:
         # sessions
         sess = self._compute_sessions(events)
 
-        # active days
+        # active days — rename() before reset_index() works on both Series and
+        # empty DataFrame (reset_index(name=) is Series-only in pandas 2.x)
         active = (
             events.groupby("visitorid")
             .apply(lambda x: x["timestamp"].dt.date.nunique(), include_groups=False)
-            .reset_index(name="active_days")
+            .rename("active_days")
+            .reset_index()
         )
 
         result = evt_counts.merge(uniq, on="visitorid", how="outer")
