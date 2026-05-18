@@ -133,12 +133,17 @@ class RetentionModel:
             X_arr = self.scaler.fit_transform(X_arr)
 
         if self.track_mlflow:
-            if mlflow.active_run() is None:
-                self._mlflow_run = mlflow.start_run(run_name=f"{self.model_type}_training")
-            mlflow.log_param("model_type", self.model_type)
-            mlflow.log_param("random_state", self.random_state)
-            mlflow.log_params(self.params)
-            mlflow.log_param("scale_features", scale_features)
+            try:
+                if mlflow.active_run() is None:
+                    self._mlflow_run = mlflow.start_run(run_name=f"{self.model_type}_training")
+                mlflow.log_param("model_type", self.model_type)
+                mlflow.log_param("random_state", self.random_state)
+                mlflow.log_params(self.params)
+                mlflow.log_param("scale_features", scale_features)
+            except Exception:
+                if self._mlflow_run:
+                    mlflow.end_run()
+                raise
 
         self.model = self._create_model()
         self.model.fit(X_arr, y_arr)
@@ -201,17 +206,20 @@ class RetentionModel:
         )
 
         if self.track_mlflow:
-            mlflow.log_metrics({
-                "auc_roc": float(auc),
-                "avg_precision": float(ap),
-                "precision": float(prec),
-                "recall": float(rec),
-                "f1": float(f1),
-                "prec_at_10": prec_at_k.get(10, 0),
-                "lift_at_10": lift_at_k.get(10, 0),
-            })
-            if self._mlflow_run:
-                mlflow.end_run()
+            try:
+                mlflow.log_metrics({
+                    "auc_roc": float(auc),
+                    "avg_precision": float(ap),
+                    "precision": float(prec),
+                    "recall": float(rec),
+                    "f1": float(f1),
+                    "prec_at_10": prec_at_k.get(10, 0),
+                    "lift_at_10": lift_at_k.get(10, 0),
+                })
+            finally:
+                if self._mlflow_run:
+                    mlflow.end_run()
+                    self._mlflow_run = None
 
         return metrics
 
@@ -284,9 +292,9 @@ class RetentionModel:
 
     def save(self, path: str):
         """Pickle the model."""
+        import datetime
         import joblib
 
-        # TODO: add version info
         joblib.dump(
             {
                 "model": self.model,
@@ -295,6 +303,7 @@ class RetentionModel:
                 "features": self.feature_names,
                 "rs": self.random_state,
                 "params": self.params,
+                "saved_at": datetime.datetime.utcnow().isoformat(),
             },
             path,
         )
@@ -325,7 +334,8 @@ def compare_models(X_train, y_train, X_test, y_test, types=None) -> pd.DataFrame
             met = m.evaluate(X_test, y_test)
             out.append({"model": t, **met.to_dict()})
         except Exception as e:
-            print(f"{t} failed: {e}")
+            import warnings
+            warnings.warn(f"{t} failed: {e}")
 
     return pd.DataFrame(out).sort_values("auc_roc", ascending=False)
 

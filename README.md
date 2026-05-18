@@ -14,7 +14,7 @@ Predicts which subscribers will churn, segments them by lifetime value, and tell
 
 ```mermaid
 graph TD
-    A[Raw Event Logs] -->|DuckDB/Pandas| B(Feature Engineering Pipeline)
+    A[Raw Event Logs] -->|Pandas| B(Feature Engineering Pipeline)
     B -->|Time-Window Aggregations| C{LightGBM / RF}
     C -->|Probability Scores| D[ROI Simulator]
     C -->|Metrics| E[(MLflow)]
@@ -91,11 +91,25 @@ roi_analysis = sim.run(probs, threshold=0.5)
 print(roi_analysis.summary())
 ```
 
+## Running the App
+
+```bash
+streamlit run app.py
+```
+
+The app opens at `http://localhost:8501`. No data download required — the demo uses a synthetic distribution.
+
+## Running Tests
+
+```bash
+pytest tests/ -v --cov=src
+```
+
 ## Docker
 
 ```bash
 docker build -t saas-churn .
-docker run -it --rm -v $(pwd)/data:/app/data saas-churn bash
+docker run -p 8501:8501 --rm saas-churn
 ```
 
 ## Repository structure
@@ -115,6 +129,10 @@ docker run -it --rm -v $(pwd)/data:/app/data saas-churn bash
 ├── Makefile
 └── requirements.txt
 ```
+
+## Figures
+
+Pre-rendered analysis figures are in `figures/`. Regenerate with `make figures` after retraining.
 
 ## Related Work
 

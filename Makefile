@@ -1,4 +1,4 @@
-.PHONY: install data test lint format
+.PHONY: install data test lint format figures
 
 install:
 	pip install --upgrade pip
@@ -16,3 +16,6 @@ lint:
 
 format:
 	ruff format .
+
+figures:
+	python notebooks/generate_figures.py

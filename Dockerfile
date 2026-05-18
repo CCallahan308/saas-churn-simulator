@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy source code
 COPY . .
 
-# Set the default command to bash for interactive exploration
-# Could be updated to run a fastapi server if an API is added
-CMD ["bash"]
+RUN useradd -m appuser
+USER appuser
+
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
