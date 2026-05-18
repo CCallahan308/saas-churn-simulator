@@ -44,7 +44,7 @@ class CustomerStateLabeler:
         w = self.w
 
         # figure out snapshot
-        if snapshot:
+        if snapshot is not None:
             snap = pd.to_datetime(snapshot)
         else:
             max_dt = events["timestamp"].max()
@@ -85,10 +85,10 @@ class CustomerStateLabeler:
         out["churned"] = (out["n_chk"] == 0).astype(int)
 
         # metadata
-        out["obs_start"] = obs_start
-        out["obs_end"] = obs_end
-        out["chk_start"] = chk_start
-        out["chk_end"] = chk_end
+        out["observation_start"] = obs_start
+        out["observation_end"] = obs_end
+        out["checkpoint_start"] = chk_start
+        out["checkpoint_end"] = chk_end
 
         rate = out["churned"].mean()
         logger.info(f"Calculated transition (churn) rate: {rate:.1%}")
@@ -120,8 +120,8 @@ class CustomerStateLabeler:
 
     def obs_events(self, events, labels):
         """Get events from observation period for the labeled customers."""
-        start = labels["obs_start"].iloc[0]
-        end = labels["obs_end"].iloc[0]
+        start = labels["observation_start"].iloc[0]
+        end = labels["observation_end"].iloc[0]
         vids = labels["visitorid"].values
 
         m = (

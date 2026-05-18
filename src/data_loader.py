@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
 
 
 class DataLoader:
@@ -40,10 +41,10 @@ class DataLoader:
     def download(self, force=False) -> bool:
         """Pull from kaggle. Needs kaggle CLI configured."""
         if not force and self._check_files():
-            print("files exist, skipping download")
+            logger.info("files exist, skipping download")
             return True
 
-        print(f"downloading {self.KAGGLE_DS}...")
+        logger.info(f"downloading {self.KAGGLE_DS}...")
         try:
             cmd = [
                 "kaggle",
@@ -57,12 +58,12 @@ class DataLoader:
             ]
             res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode != 0:
-                print(f"failed: {res.stderr}")
+                logger.warning(f"failed: {res.stderr}")
                 return False
-            print("done")
+            logger.info("done")
             return True
         except FileNotFoundError:
-            print("kaggle CLI not found - pip install kaggle and set up credentials")
+            logger.warning("kaggle CLI not found - pip install kaggle and set up credentials")
             return False
 
     def _check_files(self) -> bool:
@@ -76,7 +77,7 @@ class DataLoader:
         cachepath = self.proc / "events_processed.parquet"
 
         if cache and cachepath.exists():
-            print("loading from cache...")
+            logger.info("loading from cache...")
             df = pd.read_parquet(cachepath)
             if sample:
                 df = df.sample(frac=sample, random_state=42)
@@ -86,14 +87,14 @@ class DataLoader:
         if not path.exists():
             raise FileNotFoundError(f"no events at {path} - run download() first")
 
-        print("reading csv (may take a bit)...")
+        logger.info("reading csv (may take a bit)...")
         df = pd.read_csv(path, dtype=self.DTYPES, parse_dates=False)
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         df = self._clean_events(df)
 
         if cache:
-            print(f"caching to {cachepath}")
+            logger.info(f"caching to {cachepath}")
             df.to_parquet(cachepath, index=False)
 
         if sample:
@@ -110,7 +111,7 @@ class DataLoader:
         df = df.sort_values("timestamp").reset_index(drop=True)
         dropped = n0 - len(df)
         if dropped > 0:
-            print(f"removed {dropped:,} bad rows ({dropped / n0 * 100:.2f}%)")
+            logger.info(f"removed {dropped:,} bad rows ({dropped / n0 * 100:.2f}%)")
         return df
 
     def load_item_props(self, cache=True):
