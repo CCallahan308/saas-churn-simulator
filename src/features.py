@@ -126,6 +126,9 @@ class FeatureEngineer:
 
     def _build_frequency(self, events: pd.DataFrame) -> pd.DataFrame:
         """Count-based features."""
+        if events.empty:
+            return pd.DataFrame(columns=["visitorid"])
+
         # event counts by type
         evt_counts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
         evt_counts.columns = [f"{c}_count" for c in evt_counts.columns]
