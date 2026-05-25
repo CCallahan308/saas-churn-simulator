@@ -1,4 +1,5 @@
-FROM python:3.14-slim
+# Python 3.11 to match CI and the version the lockfile was resolved against.
+FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -15,10 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set up working directory
 WORKDIR /app
 
-# Install Python dependencies first (better caching)
-COPY requirements.txt .
+# Install pinned dependencies first (better caching, deterministic build)
+COPY requirements.lock .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.lock
 
 # Copy source code
 COPY . .

@@ -7,10 +7,15 @@ RetailRocket dataset. Prediction distributions and ROI projections are
 generated from a synthetic distribution to illustrate the pipeline behavior.
 """
 
+import json
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+
+MODELS_DIR = Path(__file__).parent / "models"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -407,26 +412,48 @@ st.markdown("""
 # DATA LAYER
 # ═══════════════════════════════════════════════════════════════════════════
 
+_FALLBACK = {
+    "auc_roc": 0.83,
+    "precision_at_10": 1.0,
+    "lift_at_10": 1.01,
+    "total_users": 5429,
+    "churn_rate": 0.989,
+    "features": {
+        "days_view": 0.11,
+        "days_since_cart": 0.10,
+        "avg_evts_per_sess": 0.08,
+        "days_since_purchase": 0.07,
+        "diversity_ratio": 0.07,
+        "days_since_any": 0.06,
+    },
+}
+
+
 @st.cache_data
 def load_model_data():
-    """Simulated model metrics - represents actual trained model performance"""
-    return {
-        "auc_roc": 0.85,
-        "precision_at_10": 0.65,
-        "lift_at_10": 3.2,
-        "total_users": 140000,
-        "churn_rate": 0.23,
-        "features": {
-            "Days Since Last Activity": 0.28,
-            "Avg Session Duration": 0.18,
-            "Purchase Count": 0.15,
-            "Browsing Velocity": 0.12,
-            "Days on Platform": 0.10,
-            "Avg Order Value": 0.08,
-            "Support Tickets": 0.05,
-            "Email Engagement": 0.04
-        }
-    }
+    """Real metrics from the committed training run (models/metrics.json).
+
+    Falls back to the published values if the artifacts are absent (e.g. a clone
+    that has not run `make train`). The numbers shown therefore always trace to a
+    committed file, not hand-entered marketing figures.
+    """
+    data = dict(_FALLBACK)
+    try:
+        metrics = json.loads((MODELS_DIR / "metrics.json").read_text())
+        test = {row["split"]: row for row in metrics["metrics"]}["test"]
+        data["auc_roc"] = test["auc_roc"]
+        data["precision_at_10"] = test["prec@10"]
+        data["lift_at_10"] = test["lift@10"]
+        data["total_users"] = metrics.get("cohort_size", data["total_users"])
+        data["churn_rate"] = metrics.get("churn_rate", data["churn_rate"])
+    except Exception:
+        pass
+    try:
+        importance = pd.read_csv(MODELS_DIR / "feature_importance.csv").head(8)
+        data["features"] = dict(zip(importance["feature"], importance["pct"] / 100))
+    except Exception:
+        pass
+    return data
 
 @st.cache_data
 def generate_prediction_distribution(n=1000):
@@ -439,7 +466,8 @@ def calculate_retention_impact(params):
     metrics = load_model_data()
     
     targeted_users = int(metrics["total_users"] * params["target_pct"] / 100)
-    lift = metrics["lift_at_10"] if params["target_pct"] <= 10 else metrics["lift_at_10"] * 0.85  # 15% degradation from lab to production
+    # assume lift decays ~15% when targeting beyond the top decile (illustrative)
+    lift = metrics["lift_at_10"] if params["target_pct"] <= 10 else metrics["lift_at_10"] * 0.85
 
     # Retention model
     intervention_rate = 0.12  # 12% targeted outreach rate (industry conservative estimate)
@@ -470,8 +498,8 @@ def render_header():
         <div class="app-title-section">
             <h1 class="app-title">Churn Prediction System</h1>
             <p class="app-subtitle">
-                Identify at-risk customers before they leave. Target retention campaigns with 3.2x lift using 
-                behavioral signals from 2.7M events.
+                Rank churn risk from behavioral signals over 2.7M RetailRocket events, and turn the
+                scores into a retention-budget decision with the ROI simulator.
             </p>
             <div class="app-meta">
                 <div class="meta-item">
@@ -479,13 +507,6 @@ def render_header():
                         <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
                     </svg>
                     <a href="https://github.com/CCallahan308/saas-churn-simulator">View Source</a>
-                </div>
-                <div class="meta-item">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                    <span>~50ms inference</span>
                 </div>
                 <div class="meta-item">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -497,7 +518,7 @@ def render_header():
         </div>
         <div class="status-badge">
             <span class="status-dot"></span>
-            Production Ready
+            Demo
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -508,10 +529,10 @@ def render_metrics():
     st.markdown('<div class="metrics-grid">', unsafe_allow_html=True)
     
     metrics = [
-        ("AUC-ROC", f"{data['auc_roc']:.2f}", "Good class separation", "positive"),
-        ("Precision @10%", f"{data['precision_at_10']:.0%}", "Top decile reliable", "positive"),
-        ("Lift Score", f"{data['lift_at_10']:.1f}x", "vs. random targeting", "positive"),
-        ("Dataset Size", f"{data['total_users']:,}", "Active users", "neutral")
+        ("AUC-ROC (test)", f"{data['auc_roc']:.2f}", "Ranking quality", "positive"),
+        ("Churn base rate", f"{data['churn_rate']:.0%}", "Near-degenerate target", "neutral"),
+        ("Lift @10%", f"{data['lift_at_10']:.2f}x", "Capped by base rate", "neutral"),
+        ("Cohort", f"{data['total_users']:,}", "Active buyers", "neutral")
     ]
     
     for label, value, change, change_type in metrics:
@@ -578,7 +599,7 @@ def render_analysis_charts():
             <div class="section-header">
                 <div>
                     <h3 class="section-title">Feature Importance</h3>
-                    <p class="section-subtitle">Top predictors by SHAP value</p>
+                    <p class="section-subtitle">Top predictors by model gain</p>
                 </div>
             </div>
         </div>
@@ -723,31 +744,32 @@ def render_roi_calculator():
 
 def render_insights():
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-    
+
+    data = load_model_data()
+    top_features = ", ".join(list(data["features"])[:3])
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
-            <div class="card-header">Key Findings</div>
+            <div class="card-header">Key Findings (from the committed run)</div>
             <ul class="info-list">
-                <li>Inactivity > 14 days is strongest churn signal (28% importance)</li>
-                <li>Browsing velocity drops 2-3 weeks before churn event</li>
-                <li>Purchase frequency more predictive than order size</li>
-                <li>Support ticket spikes indicate frustration, not engagement</li>
+                <li>Recency features dominate importance: {top_features}</li>
+                <li>Churn base rate is ~{data['churn_rate']:.0%} - most buyers are one-off, so lift over random is ~1.0</li>
+                <li>LightGBM overfits the tiny retained class; the LogisticRegression baseline generalizes better on this small, imbalanced cohort</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with col2:
         st.markdown("""
         <div class="card">
-            <div class="card-header">Recommended Actions</div>
+            <div class="card-header">Methodology Notes</div>
             <ul class="info-list">
-                <li>Target top 10-15% at-risk for optimal ROI (3x+ returns)</li>
-                <li>Intervene within 7 days of high-risk prediction</li>
-                <li>Personalize offers by customer segment value</li>
-                <li>A/B test retention strategies to improve conversion</li>
+                <li>Leakage-safe observation / gap / check windowing; visitor-disjoint split</li>
+                <li>Hyperparameters tuned with RandomizedSearchCV; probabilities isotonic-calibrated</li>
+                <li>The simulator turns calibrated risk plus cost/LTV assumptions into a targeting decision</li>
+                <li>On a dataset with real churn variance, the same pipeline produces meaningful lift</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)

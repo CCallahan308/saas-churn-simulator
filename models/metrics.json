@@ -1,0 +1,75 @@
+{
+  "model_type": "lightgbm",
+  "random_state": 42,
+  "sample": null,
+  "cohort_size": 5429,
+  "churn_rate": 0.9888,
+  "windows": {
+    "obs": 60,
+    "gap": 7,
+    "chk": 30
+  },
+  "tuned": true,
+  "tuner": "optuna",
+  "best_params": {
+    "n_estimators": 250,
+    "learning_rate": 0.017364685748846538,
+    "num_leaves": 69,
+    "max_depth": 3,
+    "min_child_samples": 99,
+    "colsample_bytree": 0.5805914652620517,
+    "reg_alpha": 0.005460963495383652,
+    "reg_lambda": 0.014570554430399191
+  },
+  "best_cv_score": 0.8831238928276879,
+  "cv_auc_mean": 0.8831238928276879,
+  "cv_auc_std": 0.05827862576921744,
+  "calibration": {
+    "method": "isotonic",
+    "brier_uncalibrated_test": 0.06472,
+    "brier_calibrated_test": 0.00883,
+    "improved": true
+  },
+  "metrics": [
+    {
+      "split": "train",
+      "auc_roc": 0.9876,
+      "avg_precision": 0.9999,
+      "precision": 0.9926,
+      "recall": 0.9992,
+      "f1": 0.9959,
+      "prec@10": 1.0,
+      "lift@10": 1.0114
+    },
+    {
+      "split": "val",
+      "auc_roc": 0.5979,
+      "avg_precision": 0.9897,
+      "precision": 0.9908,
+      "recall": 0.9981,
+      "f1": 0.9944,
+      "prec@10": 0.9815,
+      "lift@10": 0.9924
+    },
+    {
+      "split": "test",
+      "auc_roc": 0.831,
+      "avg_precision": 0.9975,
+      "precision": 0.9917,
+      "recall": 1.0,
+      "f1": 0.9958,
+      "prec@10": 1.0,
+      "lift@10": 1.0112
+    },
+    {
+      "split": "baseline:logistic (test)",
+      "auc_roc": 0.9064,
+      "avg_precision": 0.9987,
+      "precision": 0.9968,
+      "recall": 0.8678,
+      "f1": 0.9278,
+      "prec@10": 1.0,
+      "lift@10": 1.0112
+    }
+  ]
+}

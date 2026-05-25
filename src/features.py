@@ -62,33 +62,33 @@ class FeatureEngineer:
 
         # recency features - days since stuff
         if "recency" in categories:
-            rec = self._build_recency(obs_events, obs_end)
-            features = features.merge(rec, on="visitorid", how="left")
+            recency_feats = self._build_recency(obs_events, obs_end)
+            features = features.merge(recency_feats, on="visitorid", how="left")
 
         # frequency - counts of things
         if "frequency" in categories:
-            freq = self._build_frequency(obs_events)
-            features = features.merge(freq, on="visitorid", how="left")
+            frequency_feats = self._build_frequency(obs_events)
+            features = features.merge(frequency_feats, on="visitorid", how="left")
 
         # monetary - txn related (no actual prices in dataset)
         if "monetary" in categories:
-            mon = self._build_monetary(obs_events)
-            features = features.merge(mon, on="visitorid", how="left")
+            monetary_feats = self._build_monetary(obs_events)
+            features = features.merge(monetary_feats, on="visitorid", how="left")
 
         # engagement ratios - view->cart->purchase
         if "engagement" in categories:
-            eng = self._build_engagement(obs_events)
-            features = features.merge(eng, on="visitorid", how="left")
+            engagement_feats = self._build_engagement(obs_events)
+            features = features.merge(engagement_feats, on="visitorid", how="left")
 
         # trends - comparing first/second half of observation
         if "trend" in categories:
-            tr = self._build_trend(obs_events, obs_start, obs_end)
-            features = features.merge(tr, on="visitorid", how="left")
+            trend_feats = self._build_trend(obs_events, obs_start, obs_end)
+            features = features.merge(trend_feats, on="visitorid", how="left")
 
         # category/item diversity
         if "category" in categories:
-            cat = self._build_category(obs_events)
-            features = features.merge(cat, on="visitorid", how="left")
+            category_feats = self._build_category(obs_events)
+            features = features.merge(category_feats, on="visitorid", how="left")
 
         # fill missing
         features = self._fill_missing(features)
@@ -99,28 +99,29 @@ class FeatureEngineer:
 
     def _build_recency(self, events: pd.DataFrame, ref_date: pd.Timestamp) -> pd.DataFrame:
         """Recency = days since last activity of each type."""
-        feats = []
+        feature_frames = []
 
-        # using abbreviated names for some
-        for evt, col in [
+        for event_type, column in [
             ("view", "days_view"),
             ("addtocart", "days_since_cart"),
             ("transaction", "days_since_purchase"),
         ]:
-            subset = events[events["event"] == evt]
+            subset = events[events["event"] == event_type]
             if len(subset) > 0:
-                last = subset.groupby("visitorid")["timestamp"].max().reset_index()
-                last[col] = (ref_date - last["timestamp"]).dt.days
-                feats.append(last[["visitorid", col]])
+                last_event = subset.groupby("visitorid")["timestamp"].max().reset_index()
+                last_event[column] = (ref_date - last_event["timestamp"]).dt.days
+                feature_frames.append(last_event[["visitorid", column]])
 
         # any activity
-        last_any = events.groupby("visitorid")["timestamp"].max().reset_index()
-        last_any["days_since_any"] = (ref_date - last_any["timestamp"]).dt.days
-        feats.append(last_any[["visitorid", "days_since_any"]])
+        last_any_activity = events.groupby("visitorid")["timestamp"].max().reset_index()
+        last_any_activity["days_since_any"] = (
+            ref_date - last_any_activity["timestamp"]
+        ).dt.days
+        feature_frames.append(last_any_activity[["visitorid", "days_since_any"]])
 
-        result = feats[0]
-        for f in feats[1:]:
-            result = result.merge(f, on="visitorid", how="outer")
+        result = feature_frames[0]
+        for frame in feature_frames[1:]:
+            result = result.merge(frame, on="visitorid", how="outer")
 
         return result
 
@@ -129,63 +130,73 @@ class FeatureEngineer:
         if events.empty:
             return pd.DataFrame(columns=["visitorid"])
 
-        # event counts by type
-        evt_counts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
-        evt_counts.columns = [f"{c}_count" for c in evt_counts.columns]
-        evt_counts["total_events"] = evt_counts.sum(axis=1)
-        evt_counts = evt_counts.reset_index()
+        # event counts by type. observed=False keeps a column per known event
+        # category even when absent in this window (downstream code expects the
+        # full set); passing it explicitly silences a pandas FutureWarning.
+        event_counts = (
+            events.groupby(["visitorid", "event"], observed=False).size().unstack(fill_value=0)
+        )
+        event_counts.columns = [f"{name}_count" for name in event_counts.columns]
+        event_counts["total_events"] = event_counts.sum(axis=1)
+        event_counts = event_counts.reset_index()
 
         # unique items per event type
-        uniq = events.groupby(["visitorid", "event"])["itemid"].nunique().unstack(fill_value=0)
-        uniq.columns = [f"uniq_{c}" for c in uniq.columns]
-        uniq = uniq.reset_index()
+        unique_items = (
+            events.groupby(["visitorid", "event"], observed=False)["itemid"]
+            .nunique()
+            .unstack(fill_value=0)
+        )
+        unique_items.columns = [f"uniq_{name}" for name in unique_items.columns]
+        unique_items = unique_items.reset_index()
 
         # sessions
-        sess = self._compute_sessions(events)
+        sessions = self._compute_sessions(events)
 
         # active days
-        active = (
+        active_days = (
             events.groupby("visitorid")
-            .apply(lambda x: x["timestamp"].dt.date.nunique(), include_groups=False)
+            .apply(lambda group: group["timestamp"].dt.date.nunique(), include_groups=False)
             .reset_index(name="active_days")
         )
 
-        result = evt_counts.merge(uniq, on="visitorid", how="outer")
-        result = result.merge(sess, on="visitorid", how="outer")
-        result = result.merge(active, on="visitorid", how="outer")
+        result = event_counts.merge(unique_items, on="visitorid", how="outer")
+        result = result.merge(sessions, on="visitorid", how="outer")
+        result = result.merge(active_days, on="visitorid", how="outer")
 
         return result
 
     def _compute_sessions(self, events: pd.DataFrame) -> pd.DataFrame:
         """Figure out session boundaries."""
-        sorted_evts = events.sort_values(["visitorid", "timestamp"])
+        sorted_events = events.sort_values(["visitorid", "timestamp"])
 
-        sorted_evts["t_diff"] = sorted_evts.groupby("visitorid")["timestamp"].diff()
-        sorted_evts["new_sess"] = (
-            sorted_evts["t_diff"] > timedelta(minutes=self.session_timeout)
-        ) | sorted_evts["t_diff"].isna()
-        sorted_evts["sess_id"] = sorted_evts.groupby("visitorid")["new_sess"].cumsum()
+        sorted_events["time_gap"] = sorted_events.groupby("visitorid")["timestamp"].diff()
+        sorted_events["is_new_session"] = (
+            sorted_events["time_gap"] > timedelta(minutes=self.session_timeout)
+        ) | sorted_events["time_gap"].isna()
+        sorted_events["session_id"] = sorted_events.groupby("visitorid")["is_new_session"].cumsum()
 
-        sess_cnt = sorted_evts.groupby("visitorid")["sess_id"].max().reset_index()
-        sess_cnt.columns = ["visitorid", "session_count"]
+        session_counts = sorted_events.groupby("visitorid")["session_id"].max().reset_index()
+        session_counts.columns = ["visitorid", "session_count"]
 
-        evts_per = sorted_evts.groupby(["visitorid", "sess_id"]).size()
-        avg_evts = evts_per.groupby("visitorid").mean().reset_index(name="avg_evts_per_sess")
+        events_per_session = sorted_events.groupby(["visitorid", "session_id"]).size()
+        avg_events = (
+            events_per_session.groupby("visitorid").mean().reset_index(name="avg_evts_per_sess")
+        )
 
-        return sess_cnt.merge(avg_evts, on="visitorid", how="outer")
+        return session_counts.merge(avg_events, on="visitorid", how="outer")
 
     def _build_monetary(self, events: pd.DataFrame) -> pd.DataFrame:
         """Monetary features - using counts since no prices."""
-        txns = events[events["event"] == "transaction"]
+        transactions = events[events["event"] == "transaction"]
 
-        if len(txns) == 0:
+        if len(transactions) == 0:
             return pd.DataFrame(
                 columns=["visitorid", "txn_count", "avg_items_per_txn", "total_items"]
             )
 
         # aggregated at visitor level
         stats = (
-            txns.groupby("visitorid")
+            transactions.groupby("visitorid")
             .agg(
                 txn_count=("transactionid", "nunique"),
                 total_items=("itemid", "count"),
@@ -199,80 +210,86 @@ class FeatureEngineer:
 
     def _build_engagement(self, events: pd.DataFrame) -> pd.DataFrame:
         """Conversion ratios - how engaged is this person."""
-        cnts = events.groupby(["visitorid", "event"]).size().unstack(fill_value=0)
+        counts = events.groupby(["visitorid", "event"], observed=False).size().unstack(fill_value=0)
 
-        res = pd.DataFrame({"visitorid": cnts.index})
+        result = pd.DataFrame({"visitorid": counts.index})
 
         # view -> cart
-        if "view" in cnts.columns and "addtocart" in cnts.columns:
-            res["v2c_rate"] = np.where(cnts["view"] > 0, cnts["addtocart"] / cnts["view"], 0)
+        if "view" in counts.columns and "addtocart" in counts.columns:
+            result["v2c_rate"] = np.where(
+                counts["view"] > 0, counts["addtocart"] / counts["view"], 0
+            )
         else:
-            res["v2c_rate"] = 0
+            result["v2c_rate"] = 0
 
         # cart -> purchase
-        if "addtocart" in cnts.columns and "transaction" in cnts.columns:
-            res["c2p_rate"] = np.where(
-                cnts["addtocart"] > 0, cnts["transaction"] / cnts["addtocart"], 0
+        if "addtocart" in counts.columns and "transaction" in counts.columns:
+            result["c2p_rate"] = np.where(
+                counts["addtocart"] > 0, counts["transaction"] / counts["addtocart"], 0
             )
         else:
-            res["c2p_rate"] = 0
+            result["c2p_rate"] = 0
 
         # view -> purchase (direct)
-        if "view" in cnts.columns and "transaction" in cnts.columns:
-            res["v2p_rate"] = np.where(cnts["view"] > 0, cnts["transaction"] / cnts["view"], 0)
-        else:
-            res["v2p_rate"] = 0
-
-        # cart abandon
-        if "addtocart" in cnts.columns and "transaction" in cnts.columns:
-            res["cart_abandon"] = np.where(
-                cnts["addtocart"] > 0, 1 - (cnts["transaction"] / cnts["addtocart"]), 1
+        if "view" in counts.columns and "transaction" in counts.columns:
+            result["v2p_rate"] = np.where(
+                counts["view"] > 0, counts["transaction"] / counts["view"], 0
             )
         else:
-            res["cart_abandon"] = 1
+            result["v2p_rate"] = 0
 
-        for c in ["v2c_rate", "c2p_rate", "v2p_rate", "cart_abandon"]:
-            if c in res.columns:
-                res[c] = res[c].clip(0, 1)
+        # cart abandon
+        if "addtocart" in counts.columns and "transaction" in counts.columns:
+            result["cart_abandon"] = np.where(
+                counts["addtocart"] > 0, 1 - (counts["transaction"] / counts["addtocart"]), 1
+            )
+        else:
+            result["cart_abandon"] = 1
 
-        return res.reset_index(drop=True)
+        for rate_col in ["v2c_rate", "c2p_rate", "v2p_rate", "cart_abandon"]:
+            if rate_col in result.columns:
+                result[rate_col] = result[rate_col].clip(0, 1)
+
+        return result.reset_index(drop=True)
 
     def _build_trend(
         self, events: pd.DataFrame, obs_start: pd.Timestamp, obs_end: pd.Timestamp
     ) -> pd.DataFrame:
         """Compare first half to second half - are they ramping up or down?"""
-        mid = obs_start + (obs_end - obs_start) / 2
+        midpoint = obs_start + (obs_end - obs_start) / 2
 
-        first = events[events["timestamp"] < mid]
-        second = events[events["timestamp"] >= mid]
+        first_half = events[events["timestamp"] < midpoint]
+        second_half = events[events["timestamp"] >= midpoint]
 
-        f_cnt = first.groupby("visitorid").size().reset_index(name="first_evts")
-        s_cnt = second.groupby("visitorid").size().reset_index(name="second_evts")
+        first_half_events = first_half.groupby("visitorid").size().reset_index(name="first_events")
+        second_half_events = (
+            second_half.groupby("visitorid").size().reset_index(name="second_events")
+        )
 
-        f_txn = (
-            first[first["event"] == "transaction"]
+        first_half_txns = (
+            first_half[first_half["event"] == "transaction"]
             .groupby("visitorid")
             .size()
             .reset_index(name="first_txns")
         )
-        s_txn = (
-            second[second["event"] == "transaction"]
+        second_half_txns = (
+            second_half[second_half["event"] == "transaction"]
             .groupby("visitorid")
             .size()
             .reset_index(name="second_txns")
         )
 
-        result = f_cnt.merge(s_cnt, on="visitorid", how="outer")
-        result = result.merge(f_txn, on="visitorid", how="outer")
-        result = result.merge(s_txn, on="visitorid", how="outer")
+        result = first_half_events.merge(second_half_events, on="visitorid", how="outer")
+        result = result.merge(first_half_txns, on="visitorid", how="outer")
+        result = result.merge(second_half_txns, on="visitorid", how="outer")
         result = result.fillna(0)
 
-        eps = 1e-6  # avoid div by zero
-        result["activity_trend"] = (result["second_evts"] - result["first_evts"]) / (
-            result["first_evts"] + eps
+        epsilon = 1e-6  # avoid div by zero
+        result["activity_trend"] = (result["second_events"] - result["first_events"]) / (
+            result["first_events"] + epsilon
         )
         result["purchase_trend"] = (result["second_txns"] - result["first_txns"]) / (
-            result["first_txns"] + eps
+            result["first_txns"] + epsilon
         )
 
         result["activity_trend"] = result["activity_trend"].clip(-10, 10)
@@ -288,12 +305,12 @@ class FeatureEngineer:
             events.groupby("visitorid")
             .agg(
                 uniq_items=("itemid", "nunique"),
-                tot_interactions=("itemid", "count"),
+                total_interactions=("itemid", "count"),
             )
             .reset_index()
         )
 
-        stats["diversity_ratio"] = stats["uniq_items"] / stats["tot_interactions"]
+        stats["diversity_ratio"] = stats["uniq_items"] / stats["total_interactions"]
 
         # most-visited item
         item_visits = events.groupby(["visitorid", "itemid"]).size().reset_index(name="visits")
@@ -303,35 +320,48 @@ class FeatureEngineer:
         result = stats.merge(max_visits, on="visitorid", how="left")
         result["repeat_rate"] = 1 - result["diversity_ratio"]
 
-        return result.drop(columns=["tot_interactions"])
+        return result.drop(columns=["total_interactions"])
 
-    def _fill_missing(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Fill NaNs with reasonable defaults."""
-        # recency - worst case
-        rec_cols = [c for c in df.columns if "days" in c]
-        for c in rec_cols:
-            if c in df.columns:
-                mx = df[c].max()
-                df[c] = df[c].fillna(mx if pd.notna(mx) else 999)
+    def _fill_missing(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Fill NaNs with reasonable defaults.
 
-        # counts get 0
-        cnt_cols = [
-            c for c in df.columns if "count" in c or c.startswith("total") or c.startswith("txn")
-        ]
-        df[cnt_cols] = df[cnt_cols].fillna(0)
+        Wrapped in ``future.no_silent_downcasting`` so the implicit object->numeric
+        downcast on fillna is opt-in - this is the pandas>=2.2 forward-compatible
+        behavior and silences a FutureWarning that becomes an error in pandas 3.0.
+        """
+        with pd.option_context("future.no_silent_downcasting", True):
+            # recency - worst case (longest observed gap, or 999 if none)
+            recency_cols = [col for col in features.columns if "days" in col]
+            for col in recency_cols:
+                max_recency = features[col].max()
+                features[col] = features[col].fillna(
+                    max_recency if pd.notna(max_recency) else 999
+                )
 
-        # rates and ratios
-        rate_cols = [c for c in df.columns if "_rate" in c or "_ratio" in c or "abandon" in c]
-        df[rate_cols] = df[rate_cols].fillna(0)
+            # counts get 0
+            count_cols = [
+                col
+                for col in features.columns
+                if "count" in col or col.startswith("total") or col.startswith("txn")
+            ]
+            features[count_cols] = features[count_cols].fillna(0)
 
-        # trends - neutral
-        trend_cols = [c for c in df.columns if "trend" in c]
-        df[trend_cols] = df[trend_cols].fillna(0)
+            # rates and ratios
+            rate_cols = [
+                col
+                for col in features.columns
+                if "_rate" in col or "_ratio" in col or "abandon" in col
+            ]
+            features[rate_cols] = features[rate_cols].fillna(0)
 
-        # anything left
-        df = df.fillna(0)
+            # trends - neutral
+            trend_cols = [col for col in features.columns if "trend" in col]
+            features[trend_cols] = features[trend_cols].fillna(0)
 
-        return df
+            # anything left
+            features = features.fillna(0).infer_objects(copy=False)
+
+        return features
 
     def get_feature_descriptions(self) -> dict[str, str]:
         """Short descriptions of what each feature means."""
