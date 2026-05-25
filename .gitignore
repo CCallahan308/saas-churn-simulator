@@ -47,11 +47,15 @@ data/processed/*.parquet
 data/features/*.csv
 data/features/*.parquet
 
-# Model artifacts
-models/
+# Model artifacts: ignore everything under models/ by default, but commit the
+# published run's artifacts so every number in the README is backed by a file.
+models/*
 *.pkl
 *.joblib
 *.h5
+!models/metrics.json
+!models/feature_importance.csv
+!models/lightgbm.joblib
 
 # Logs and temp files
 *.log
@@ -64,3 +68,7 @@ kaggle.json
 # Environment variables
 .env
 .env.local
+
+# Local editor / assistant tooling (kept local, not part of the project)
+.claude/
+CLAUDE.md

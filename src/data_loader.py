@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
+from src.config import RANDOM_STATE
+
 
 class DataLoader:
     """Download and load the RetailRocket data.
@@ -24,6 +26,7 @@ class DataLoader:
         "item_properties_part2.csv",
         "category_tree.csv",
     ]
+    REQUIRED_EVENT_COLS = {"timestamp", "visitorid", "event", "itemid"}
     DTYPES = {
         "visitorid": "int64",
         "itemid": "int64",
@@ -80,7 +83,7 @@ class DataLoader:
             logger.info("loading from cache...")
             df = pd.read_parquet(cachepath)
             if sample:
-                df = df.sample(frac=sample, random_state=42)
+                df = df.sample(frac=sample, random_state=RANDOM_STATE)
             return df
 
         path = self.raw / "events.csv"
@@ -89,6 +92,14 @@ class DataLoader:
 
         logger.info("reading csv (may take a bit)...")
         df = pd.read_csv(path, dtype=self.DTYPES, parse_dates=False)
+
+        missing = self.REQUIRED_EVENT_COLS - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"events.csv missing required columns: {sorted(missing)}; "
+                f"got {list(df.columns)}"
+            )
+
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         df = self._clean_events(df)
@@ -98,20 +109,20 @@ class DataLoader:
             df.to_parquet(cachepath, index=False)
 
         if sample:
-            df = df.sample(frac=sample, random_state=42)
+            df = df.sample(frac=sample, random_state=RANDOM_STATE)
 
         return df
 
-    def _clean_events(self, df):
+    def _clean_events(self, df: pd.DataFrame) -> pd.DataFrame:
         """Drop invalid rows."""
-        n0 = len(df)
+        initial_count = len(df)
         df = df[df["visitorid"] > 0]
         df = df[df["itemid"] > 0]
         df = df[df["timestamp"].notna()]
         df = df.sort_values("timestamp").reset_index(drop=True)
-        dropped = n0 - len(df)
+        dropped = initial_count - len(df)
         if dropped > 0:
-            logger.info(f"removed {dropped:,} bad rows ({dropped / n0 * 100:.2f}%)")
+            logger.info(f"removed {dropped:,} bad rows ({dropped / initial_count * 100:.2f}%)")
         return df
 
     def load_item_props(self, cache=True):
@@ -121,18 +132,18 @@ class DataLoader:
         if cache and cachepath.exists():
             return pd.read_parquet(cachepath)
 
-        dfs = []
-        for fn in ["item_properties_part1.csv", "item_properties_part2.csv"]:
-            p = self.raw / fn
-            if p.exists():
-                d = pd.read_csv(p)
-                d["timestamp"] = pd.to_datetime(d["timestamp"], unit="ms")
-                dfs.append(d)
+        frames = []
+        for filename in ["item_properties_part1.csv", "item_properties_part2.csv"]:
+            file_path = self.raw / filename
+            if file_path.exists():
+                frame = pd.read_csv(file_path)
+                frame["timestamp"] = pd.to_datetime(frame["timestamp"], unit="ms")
+                frames.append(frame)
 
-        if not dfs:
+        if not frames:
             raise FileNotFoundError("no item property files")
 
-        props = pd.concat(dfs, ignore_index=True)
+        props = pd.concat(frames, ignore_index=True)
         props = props.sort_values("timestamp")
         props = props.drop_duplicates(subset=["itemid", "property"], keep="last")
 

@@ -1,143 +1,90 @@
 # SaaS Churn Simulator
 
-A generalizable churn prediction and retention-ROI simulator built for SaaS-style subscription products. Demonstrated on the RetailRocket dataset (2.7M events, 1.4M visitors) — the same logic transfers directly to any event-driven product where users have observable engagement and recurring billing.
+An end-to-end churn-prediction and retention-ROI pipeline for subscription / event-log products, built for **correctness and reproducibility** and demonstrated honestly on the RetailRocket dataset (2.7M events, 1.4M visitors).
 
-**[Live Demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** • Try the interactive simulator
+**[Live demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** · leakage-safe labeling · Optuna-tuned + calibrated · reproducible via `make data && make train`
 
----
+## TL;DR
 
-## What this does
+- **What:** predict which active buyers won't come back, then turn the risk scores into a retention-budget decision (the ROI simulator).
+- **How:** time-windowed leakage-safe labeling → behavioral features → LightGBM (Optuna-tuned, isotonic-calibrated) benchmarked against a LogisticRegression baseline.
+- **Result (committed, reproducible):** 5-fold CV ROC-AUC **0.88 ± 0.06**. On RetailRocket the churn base rate is ~99%, so business *lift* is ~1.0 — the value here is the methodology and honest evaluation, not a headline metric (see [Limitations](#limitations)).
 
-Predicts which subscribers will churn, segments them by lifetime value, and tells you which segments are worth spending retention budget on. Built so the simulator works on any event-log dataset — swap the loader and the same pipeline runs.
+## Problem
 
-## Architecture
+Subscription and e-commerce products lose revenue to silent churn: users disengage before they cancel. The task is two-fold — (1) rank who is about to lapse from behavioral signals, and (2) decide *who is worth contacting*, since blanket discounting destroys margin.
 
-```mermaid
-graph TD
-    A[Raw Event Logs] -->|Pandas| B(Feature Engineering Pipeline)
-    B -->|Time-Window Aggregations| C{LightGBM / RF}
-    C -->|Probability Scores| D[ROI Simulator]
-    C -->|Metrics| E[(MLflow)]
-    D --> F[Campaign Recommendations]
-```
+## Data
+
+- **Real:** [RetailRocket e-commerce](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset) — 2.76M events (view / addtocart / transaction), 1.41M visitors, ~137 days. Download with `make data` (needs Kaggle API credentials). Raw data is **git-ignored**, not committed.
+- **Synthetic:** the live Streamlit demo renders a **synthetic prediction distribution** for visualization; its metric cards are read from the committed `models/metrics.json`, not hand-entered.
+
+## Method
+
+- **Leakage-safe labeling.** A sliding `observation (60d) → gap (7d) → check (30d)` window: features come only from the observation window; churn = no purchase in the check window. The gap stops features from peeking at the label.
+- **Split.** The dataset is too short (137d) for a clean temporal holdout, so one cohort is labeled and split **by visitor** (stratified 70/10/20) — no customer appears in two splits.
+- **Features.** Six families from the observation window: recency, frequency, monetary proxy (no prices in the data), engagement (view→cart→purchase), trend, item diversity.
+- **Model.** LightGBM tuned with **Optuna** (TPE, regularization-focused) and **isotonic-calibrated**, vs a LogisticRegression baseline. `class_weight="balanced"`; all tuning/calibration uses CV on the training split only.
 
 ## Results
 
-| Metric | Value | What it means |
-|--------|-------|---------------|
-| AUC-ROC | 0.85 | Good separation between active/churning users |
-| Precision @ 10% | 65% | Top decile predictions are reliable |
-| Lift @ 10% | 3.2x | Targeting is 3x better than random |
+From the committed run (`models/metrics.json`; reproduce with `make data && make train`):
 
-**Findings:**
-- Days since last activity is the strongest churn predictor
-- Browsing velocity drops before abandonment
-- Targeting top 20% at-risk users shows ~600% ROI
+| Metric (test set) | LightGBM (Optuna + calibrated) | LogisticRegression (baseline) |
+|---|---|---|
+| ROC-AUC | 0.83 | **0.91** |
+| Avg precision | 0.998 | 0.999 |
+| Lift @ 10% | 1.01× | 1.01× |
 
-## Why a simulator, not just a model
+- **5-fold CV ROC-AUC (LightGBM):** 0.883 ± 0.058 — the stable estimate; single holdouts swing widely (val 0.60 vs test 0.83) because only ~1% of the cohort is retained.
+- **Calibration** (isotonic) cut the test Brier score **0.065 → 0.009**.
+- **Top predictors** (`models/feature_importance.csv`): days-since-last-view leads by a wide margin, then browsing-intensity features (view count, active days, sessions) — *viewing* behavior carries the signal, not purchase history.
 
-Most churn projects stop at "here's the AUC." Real businesses need the next step: *given a model, how much should we spend on retention and on whom?* The ROI simulator runs that question across cost-per-intervention scenarios and LTV assumptions, so you can compare blast-everyone vs. target-the-top-decile.
+Full data exploration: **[docs/EDA.md](docs/EDA.md)**.
 
-## Tech stack
+## Limitations
 
-| Purpose | Tools |
-|---------|-------|
-| Modeling | LightGBM, RandomForest, LogisticRegression |
-| Tracking | MLflow |
-| Config | Pydantic |
-| Logging | Loguru |
-| Explainability | SHAP |
-| Containers | Docker |
+- **~99% churn base rate** under a 30-day repurchase definition (only ~9% of buyers ever order twice), so lift over random is ~1.0 — there is little targeting headroom on this dataset. Earlier inflated "3× lift / 0.85 AUC" style claims were unreproducible and have been removed.
+- **Tiny retained class** (~1%, ~12 customers in the test split) → high-variance holdout metrics; trust the CV number.
+- **Monetary value is a proxy** (item/transaction counts; the dataset has no prices).
+- This is a **portfolio/analysis project**, not a production service — there is no serving API or live scoring.
 
-## Setup
+## How to run
 
 ```bash
-git clone https://github.com/CCallahan308/saas-churn-simulator.git
-cd saas-churn-simulator
+make install   # pinned environment from requirements.lock (Python 3.11)
+make data      # download RetailRocket via Kaggle CLI (needs Kaggle credentials)
+make train     # reproduce models/metrics.json + feature_importance.csv
+make test      # pytest
+make lint      # ruff
 
-make install  # pip install requirements
-make data     # download Kaggle dataset
+streamlit run app.py    # local demo at http://localhost:8501 (synthetic distribution)
+docker build -t saas-churn . && docker run -p 8501:8501 --rm saas-churn
 ```
 
-You'll need Kaggle API credentials configured.
-
-## Usage
-
-```python
-from src.data_loader import DataLoader
-from src.churn_definition import CustomerStateLabeler, StateWindows
-from src.features import FeatureEngineer
-from src.models import RetentionModel
-from src.simulator import InterventionSimulator
-
-loader = DataLoader()
-events = loader.load_events()
-
-labeler = CustomerStateLabeler(windows=StateWindows(obs=60, gap=7, chk=30))
-labels = labeler.label(events)
-
-engineer = FeatureEngineer()
-obs_events = labeler.obs_events(events, labels)
-features = engineer.build_features(obs_events, labels)
-
-model = RetentionModel(model_type="lightgbm", track_mlflow=True)
-X, y = features.drop(columns=["visitorid"]), labels["churned"]
-model.fit(X, y)
-
-probs = model.predict_proba(X)
-sim = InterventionSimulator(ltv=100)
-roi_analysis = sim.run(probs, threshold=0.5)
-
-print(roi_analysis.summary())
-```
-
-## Running the App
-
-```bash
-streamlit run app.py
-```
-
-The app opens at `http://localhost:8501`. No data download required — the demo uses a synthetic distribution.
-
-## Running Tests
-
-```bash
-pytest tests/ -v --cov=src
-```
-
-## Docker
-
-```bash
-docker build -t saas-churn .
-docker run -p 8501:8501 --rm saas-churn
-```
-
-## Repository structure
+## Repository layout
 
 ```
-├── data/           # raw and processed data
-├── notebooks/      # exploratory analysis
-├── src/            # pipeline modules
-│   ├── data_loader.py
-│   ├── churn_definition.py
-│   ├── features.py
-│   ├── models.py
-│   ├── segmentation.py
-│   └── simulator.py
-├── tests/          # pytest
-├── Dockerfile
-├── Makefile
-└── requirements.txt
+app.py                 Streamlit demo (metric cards read from models/metrics.json)
+src/
+  config.py            seed, default windows, paths
+  data_loader.py       Kaggle download, cleaning, parquet cache
+  churn_definition.py  leakage-safe time-window labeling
+  features.py          six behavioral feature families
+  models.py            RetentionModel: Optuna tuning, calibration, metrics, SHAP
+  segmentation.py      RFM + k-means segmentation
+  simulator.py         retention ROI simulator
+  train.py             end-to-end reproducible pipeline (entry point)
+models/                committed run artifacts: metrics.json, feature_importance.csv, lightgbm.joblib
+docs/EDA.md            data exploration (narrative + figures)
+tests/                 pytest (labeling + feature engineering)
+requirements.txt       loose floors (CI + Dependabot)   ·   requirements.lock  pinned env
 ```
 
-## Figures
+## Related work
 
-Pre-rendered analysis figures are in `figures/`. Regenerate with `make figures` after retraining.
-
-## Related Work
-
-- [SignalForge](https://github.com/CCallahan308/signalforge) — same problem space, telco data, deeper statistical analysis (bootstrap CIs, p-values, calibration)
-- [E-Commerce Retention & Growth](https://github.com/CCallahan308/ecommerce-retention-growth) — sister project using XGBoost on the KKBox music subscription dataset
+- [SignalForge](https://github.com/CCallahan308/signalforge) — telco churn, deeper statistics (bootstrap CIs, calibration).
+- [E-Commerce Retention & Growth](https://github.com/CCallahan308/ecommerce-retention-growth) — XGBoost on the KKBox subscription dataset.
 
 ## License
 

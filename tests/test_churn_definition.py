@@ -1,12 +1,9 @@
 # tests for churn labeling
 
-import sys
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-
-sys.path.insert(0, "..")
 
 from src.churn_definition import CustomerStateLabeler as ChurnLabeler
 from src.churn_definition import StateWindows as ChurnWindows

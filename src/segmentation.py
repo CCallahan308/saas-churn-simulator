@@ -8,6 +8,8 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+from src.config import RANDOM_STATE
+
 
 @dataclass
 class SegmentProfile:
@@ -89,183 +91,221 @@ class CustomerSegmenter:
 
     def rfm_scores(
         self,
-        features,
-        r_col="days_since_last_purchase",
-        f_col="transaction_count",
-        m_col="total_items_purchased",
-        q=5,
+        features: pd.DataFrame,
+        r_col: str = "days_since_purchase",
+        f_col: str = "transaction_count",
+        m_col: str = "total_items",
+        q: int = 5,
     ) -> pd.DataFrame:
         """Compute RFM quintile scores.
 
         r_col: recency (lower = better, so we invert)
         f_col: frequency (higher = better)
         m_col: monetary (higher = better)
+
+        Defaults match the column names emitted by ``FeatureEngineer``
+        (days_since_purchase / transaction_count / total_items). If a column
+        is absent the score falls back to the neutral quintile (3).
         """
-        out = features[["visitorid"]].copy()
+        scores = features[["visitorid"]].copy()
 
         # R score (inverted since lower days is better)
         if r_col in features.columns:
-            out["R"] = pd.qcut(
+            scores["R"] = pd.qcut(
                 features[r_col].rank(method="first"), q=q, labels=range(q, 0, -1)
             ).astype(int)
         else:
-            out["R"] = 3
+            scores["R"] = 3
 
         # F score
         if f_col in features.columns:
-            out["F"] = pd.qcut(
+            scores["F"] = pd.qcut(
                 features[f_col].rank(method="first"), q=q, labels=range(1, q + 1), duplicates="drop"
             ).astype(int)
         else:
-            out["F"] = 3
+            scores["F"] = 3
 
         # M score
         if m_col in features.columns:
-            out["M"] = pd.qcut(
+            scores["M"] = pd.qcut(
                 features[m_col].rank(method="first"), q=q, labels=range(1, q + 1), duplicates="drop"
             ).astype(int)
         else:
-            out["M"] = 3
+            scores["M"] = 3
 
-        out["RFM"] = out["R"] + out["F"] + out["M"]
-        out["RFM_str"] = out["R"].astype(str) + out["F"].astype(str) + out["M"].astype(str)
+        scores["RFM"] = scores["R"] + scores["F"] + scores["M"]
+        scores["RFM_str"] = (
+            scores["R"].astype(str) + scores["F"].astype(str) + scores["M"].astype(str)
+        )
 
-        self._rfm = out
-        return out
+        self._rfm = scores
+        return scores
 
-    def assign_segments(self, scores=None) -> pd.DataFrame:
+    def assign_segments(self, scores: pd.DataFrame | None = None) -> pd.DataFrame:
         """Map RFM scores to named segments."""
-        df = scores if scores is not None else self._rfm
-        if df is None:
+        scores_df = scores if scores is not None else self._rfm
+        if scores_df is None:
             raise ValueError("run rfm_scores first")
 
         def lookup(row):
-            r, f, m = row["R"], row["F"], row["M"]
-            for name, rlo, rhi, flo, fhi, mlo, mhi in self.RULES:
-                if rlo <= r <= rhi and flo <= f <= fhi and mlo <= m <= mhi:
+            recency, frequency, monetary = row["R"], row["F"], row["M"]
+            for name, r_lo, r_hi, f_lo, f_hi, m_lo, m_hi in self.RULES:
+                if r_lo <= recency <= r_hi and f_lo <= frequency <= f_hi and m_lo <= monetary <= m_hi:
                     return name
             # fallback
-            return "NeedsAttn" if r >= 3 else "Hibernating"
+            return "NeedsAttn" if recency >= 3 else "Hibernating"
 
-        df["segment"] = df.apply(lookup, axis=1)
-        return df
+        scores_df["segment"] = scores_df.apply(lookup, axis=1)
+        return scores_df
 
     def rfm_segment(
         self,
-        features,
-        r_col="days_since_last_purchase",
-        f_col="transaction_count",
-        m_col="total_items_purchased",
+        features: pd.DataFrame,
+        r_col: str = "days_since_purchase",
+        f_col: str = "transaction_count",
+        m_col: str = "total_items",
     ) -> pd.DataFrame:
         """One-shot RFM segmentation."""
         scores = self.rfm_scores(features, r_col, f_col, m_col)
         return self.assign_segments(scores)
 
-    def cluster(self, features, cols=None, k=5, rs=42) -> pd.DataFrame:
+    def cluster(
+        self,
+        features: pd.DataFrame,
+        cols: list[str] | None = None,
+        k: int = 5,
+        rs: int = RANDOM_STATE,
+    ) -> pd.DataFrame:
         """K-means behavioral clustering."""
         if cols is None:
             exclude = ["visitorid", "churned", "segment"]
             cols = [
-                c
-                for c in features.columns
-                if c not in exclude and features[c].dtype in ["int64", "float64"]
+                col
+                for col in features.columns
+                if col not in exclude and features[col].dtype in ["int64", "float64"]
             ]
 
-        X = features[cols].values
+        feature_matrix = features[cols].values
         self._scaler = StandardScaler()
-        Xs = self._scaler.fit_transform(X)
-        Xs = np.nan_to_num(Xs, nan=0.0)
+        scaled_features = self._scaler.fit_transform(feature_matrix)
+        scaled_features = np.nan_to_num(scaled_features, nan=0.0)
 
         self._kmeans = KMeans(n_clusters=k, random_state=rs, n_init="auto")
-        labels = self._kmeans.fit_predict(Xs)
+        labels = self._kmeans.fit_predict(scaled_features)
 
         return pd.DataFrame({"visitorid": features["visitorid"], "cluster": labels})
 
-    def profile_segments(self, features, segments, churn_probs=None, seg_col="segment"):
+    def profile_segments(
+        self,
+        features: pd.DataFrame,
+        segments: pd.DataFrame,
+        churn_probs: pd.Series | None = None,
+        seg_col: str = "segment",
+    ) -> list[SegmentProfile]:
         """Generate profiles for each segment."""
         data = features.merge(segments[["visitorid", seg_col]], on="visitorid")
         if churn_probs is not None:
-            data["cp"] = churn_probs.values
+            data["churn_prob"] = churn_probs.values
 
         profiles = []
         n_total = len(data)
 
-        for seg in data[seg_col].unique():
-            sub = data[data[seg_col] == seg]
+        for segment in data[seg_col].unique():
+            segment_rows = data[data[seg_col] == segment]
 
-            risk = sub["cp"].mean() if "cp" in sub.columns else None
+            risk = segment_rows["churn_prob"].mean() if "churn_prob" in segment_rows.columns else None
 
-            # try different column names with safe access
-            rec = (
-                sub["days_since_last_purchase"].mean()
-                if "days_since_last_purchase" in sub.columns
-                else (sub["days_since_any"].mean() if "days_since_any" in sub.columns else 0.0)
+            # try different column names with safe access (primary names match
+            # FeatureEngineer output; the alternates cover older callers)
+            recency = (
+                segment_rows["days_since_purchase"].mean()
+                if "days_since_purchase" in segment_rows.columns
+                else (
+                    segment_rows["days_since_any"].mean()
+                    if "days_since_any" in segment_rows.columns
+                    else 0.0
+                )
             )
-            freq = (
-                sub["transaction_count"].mean()
-                if "transaction_count" in sub.columns
-                else (sub["total_events"].mean() if "total_events" in sub.columns else 0.0)
+            frequency = (
+                segment_rows["transaction_count"].mean()
+                if "transaction_count" in segment_rows.columns
+                else (
+                    segment_rows["total_events"].mean()
+                    if "total_events" in segment_rows.columns
+                    else 0.0
+                )
             )
-            mon = sub["total_items_purchased"].mean() if "total_items_purchased" in sub.columns else 0.0
+            monetary = (
+                segment_rows["total_items"].mean()
+                if "total_items" in segment_rows.columns
+                else 0.0
+            )
 
-            desc = self.SEG_INFO.get(seg, f"cluster {seg}")
-            act = self.ACTIONS.get(seg, "analyze and target")
+            description = self.SEG_INFO.get(segment, f"cluster {segment}")
+            action = self.ACTIONS.get(segment, "analyze and target")
 
             profiles.append(
                 SegmentProfile(
-                    name=seg,
-                    size=len(sub),
-                    pct=len(sub) / n_total,
+                    name=segment,
+                    size=len(segment_rows),
+                    pct=len(segment_rows) / n_total,
                     churn_risk=float(risk) if risk is not None else None,
-                    recency=float(rec),
-                    freq=float(freq),
-                    monetary=float(mon),
-                    desc=desc,
-                    action=act,
+                    recency=float(recency),
+                    freq=float(frequency),
+                    monetary=float(monetary),
+                    desc=description,
+                    action=action,
                 )
             )
 
         profiles.sort(key=operator.attrgetter("size"), reverse=True)
         return profiles
 
-    def elbow(self, features, cols=None, max_k=10):
+    def elbow(
+        self, features: pd.DataFrame, cols: list[str] | None = None, max_k: int = 10
+    ) -> dict[int, float]:
         """Elbow method for picking k."""
         if cols is None:
             exclude = ["visitorid", "churned", "segment"]
             cols = [
-                c
-                for c in features.columns
-                if c not in exclude and features[c].dtype in ["int64", "float64"]
+                col
+                for col in features.columns
+                if col not in exclude and features[col].dtype in ["int64", "float64"]
             ]
 
-        X = features[cols].values
+        feature_matrix = features[cols].values
         scaler = StandardScaler()
-        Xs = scaler.fit_transform(X)
-        Xs = np.nan_to_num(Xs, nan=0.0)
+        scaled_features = scaler.fit_transform(feature_matrix)
+        scaled_features = np.nan_to_num(scaled_features, nan=0.0)
 
         inertias = {}
         for k in range(2, max_k + 1):
-            km = KMeans(n_clusters=k, random_state=42, n_init="auto")
-            km.fit(Xs)
-            inertias[k] = km.inertia_
+            kmeans_model = KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init="auto")
+            kmeans_model.fit(scaled_features)
+            inertias[k] = kmeans_model.inertia_
 
         return inertias
 
-    def summary_table(self, profiles):
+    def summary_table(self, profiles: list[SegmentProfile]) -> pd.DataFrame:
         """Convert profiles to df."""
         return pd.DataFrame([p.to_dict() for p in profiles])
 
-    def high_value_at_risk(self, features, segments, probs, risk_t=0.5, val_pct=0.75):
+    def high_value_at_risk(
+        self,
+        features: pd.DataFrame,
+        segments: pd.DataFrame,
+        probs: pd.Series,
+        risk_t: float = 0.5,
+        val_pct: float = 0.75,
+    ) -> pd.DataFrame:
         """Find high-value customers likely to churn."""
-        df = features.merge(segments, on="visitorid")
-        df["p"] = probs.values
+        merged = features.merge(segments, on="visitorid")
+        merged["churn_prob"] = probs.values
 
-        val_col = (
-            "total_items_purchased"
-            if "total_items_purchased" in df.columns
-            else "transaction_count"
-        )
-        val_thresh = df[val_col].quantile(val_pct)
+        value_col = "total_items" if "total_items" in merged.columns else "transaction_count"
+        value_threshold = merged[value_col].quantile(val_pct)
 
-        out = df[(df["p"] >= risk_t) & (df[val_col] >= val_thresh)].copy()
-        return out.sort_values("p", ascending=False)
+        at_risk = merged[
+            (merged["churn_prob"] >= risk_t) & (merged[value_col] >= value_threshold)
+        ].copy()
+        return at_risk.sort_values("churn_prob", ascending=False)
