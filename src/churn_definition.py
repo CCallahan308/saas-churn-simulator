@@ -4,13 +4,15 @@ import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
+from src.config import DEFAULT_CHK_DAYS, DEFAULT_GAP_DAYS, DEFAULT_OBS_DAYS
+
 
 class StateWindows(BaseModel):
     """Time window config for state transitions (Active vs Inactive)."""
 
-    obs: int = 60  # observation days
-    gap: int = 7  # buffer
-    chk: int = 30  # churn check days
+    obs: int = DEFAULT_OBS_DAYS  # observation days
+    gap: int = DEFAULT_GAP_DAYS  # buffer
+    chk: int = DEFAULT_CHK_DAYS  # churn check days
 
     model_config = ConfigDict(frozen=True)
 
@@ -18,7 +20,7 @@ class StateWindows(BaseModel):
     def total(self) -> int:
         return self.obs + self.gap + self.chk
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"StateWindows(obs={self.obs}, gap={self.gap}, check={self.chk})"
 
 
@@ -29,10 +31,15 @@ class CustomerStateLabeler:
     Only customers with at least one purchase in observation period are labeled.
     """
 
-    def __init__(self, windows=None):
-        self.w = windows or StateWindows()
+    def __init__(self, windows: StateWindows | None = None):
+        self.windows = windows or StateWindows()
 
-    def label(self, events, snapshot=None, min_txns=1):
+    def label(
+        self,
+        events: pd.DataFrame,
+        snapshot: str | pd.Timestamp | None = None,
+        min_txns: int = 1,
+    ) -> pd.DataFrame:
         """Main labeling function.
 
         events: df with timestamp, visitorid, event, itemid, transactionid
@@ -41,110 +48,120 @@ class CustomerStateLabeler:
 
         Returns df with visitorid, churned, and window info
         """
-        w = self.w
+        windows = self.windows
 
-        # figure out snapshot
+        # figure out the snapshot (reference) date
         if snapshot is not None:
-            snap = pd.to_datetime(snapshot)
+            snapshot_date = pd.to_datetime(snapshot)
         else:
-            max_dt = events["timestamp"].max()
-            snap = max_dt - timedelta(days=w.chk)
+            max_timestamp = events["timestamp"].max()
+            snapshot_date = max_timestamp - timedelta(days=windows.chk)
 
-        # boundaries
-        obs_end = snap - timedelta(days=w.gap)
-        obs_start = obs_end - timedelta(days=w.obs)
-        chk_start = snap
-        chk_end = snap + timedelta(days=w.chk)
+        # window boundaries
+        obs_end = snapshot_date - timedelta(days=windows.gap)
+        obs_start = obs_end - timedelta(days=windows.obs)
+        check_start = snapshot_date
+        check_end = snapshot_date + timedelta(days=windows.chk)
 
         logger.info(f"Observation window: {obs_start.date()} to {obs_end.date()}")
-        logger.info(f"Gap buffer: {obs_end.date()} to {chk_start.date()}")
-        logger.info(f"Check window: {chk_start.date()} to {chk_end.date()}")
+        logger.info(f"Gap buffer: {obs_end.date()} to {check_start.date()}")
+        logger.info(f"Check window: {check_start.date()} to {check_end.date()}")
 
         # just transactions
-        txns = events[events["event"] == "transaction"].copy()
+        transactions = events[events["event"] == "transaction"].copy()
 
-        # obs period txns
-        obs_txns = txns[(txns["timestamp"] >= obs_start) & (txns["timestamp"] < obs_end)]
-        obs_cnts = obs_txns.groupby("visitorid").size().reset_index(name="n_obs")
+        # transactions in the observation window
+        obs_transactions = transactions[
+            (transactions["timestamp"] >= obs_start) & (transactions["timestamp"] < obs_end)
+        ]
+        obs_counts = obs_transactions.groupby("visitorid").size().reset_index(name="obs_txn_count")
 
-        # filter to active customers
-        active = obs_cnts[obs_cnts["n_obs"] >= min_txns]["visitorid"].values
-        logger.info(f"Active customers identified: {len(active):,}")
+        # keep only customers active (>= min_txns purchases) in the observation window
+        active_customers = obs_counts[obs_counts["obs_txn_count"] >= min_txns]["visitorid"].values
+        logger.info(f"Active customers identified: {len(active_customers):,}")
 
-        # check period txns
-        chk_txns = txns[(txns["timestamp"] >= chk_start) & (txns["timestamp"] < chk_end)]
-        chk_cnts = chk_txns.groupby("visitorid").size().reset_index(name="n_chk")
+        # transactions in the check window
+        check_transactions = transactions[
+            (transactions["timestamp"] >= check_start) & (transactions["timestamp"] < check_end)
+        ]
+        check_counts = (
+            check_transactions.groupby("visitorid").size().reset_index(name="check_txn_count")
+        )
 
         # build output
-        out = pd.DataFrame({"visitorid": active})
-        out = out.merge(obs_cnts, on="visitorid", how="left")
-        out = out.merge(chk_cnts, on="visitorid", how="left")
-        out["n_chk"] = out["n_chk"].fillna(0).astype(int)
+        labels = pd.DataFrame({"visitorid": active_customers})
+        labels = labels.merge(obs_counts, on="visitorid", how="left")
+        labels = labels.merge(check_counts, on="visitorid", how="left")
+        labels["check_txn_count"] = labels["check_txn_count"].fillna(0).astype(int)
 
-        # churn = no txns in check period
-        out["churned"] = (out["n_chk"] == 0).astype(int)
+        # churn = no transactions in the check window
+        labels["churned"] = (labels["check_txn_count"] == 0).astype(int)
 
-        # metadata
-        out["observation_start"] = obs_start
-        out["observation_end"] = obs_end
-        out["checkpoint_start"] = chk_start
-        out["checkpoint_end"] = chk_end
+        # metadata: carry window boundaries so feature building can reuse them
+        labels["observation_start"] = obs_start
+        labels["observation_end"] = obs_end
+        labels["checkpoint_start"] = check_start
+        labels["checkpoint_end"] = check_end
 
-        rate = out["churned"].mean()
-        logger.info(f"Calculated transition (churn) rate: {rate:.1%}")
+        churn_rate = labels["churned"].mean()
+        logger.info(f"Calculated transition (churn) rate: {churn_rate:.1%}")
 
-        return out
+        return labels
 
-    def train_val_test_split(self, events, test_size=0.2, val_size=0.1):
+    def train_val_test_split(
+        self, events: pd.DataFrame, test_size: float = 0.2, val_size: float = 0.1
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Make time-based splits to avoid leakage."""
-        mn = events["timestamp"].min()
-        mx = events["timestamp"].max()
-        total_days = (mx - mn).days
+        min_timestamp = events["timestamp"].min()
+        max_timestamp = events["timestamp"].max()
+        total_days = (max_timestamp - min_timestamp).days
 
-        buf = self.w.total
-        usable = total_days - buf
-        test_days = int(usable * test_size)
-        val_days = int(usable * val_size)
+        buffer_days = self.windows.total
+        usable_days = total_days - buffer_days
+        test_days = int(usable_days * test_size)
+        val_days = int(usable_days * val_size)
 
-        test_snap = mx - timedelta(days=self.w.chk)
-        val_snap = test_snap - timedelta(days=test_days)
-        train_snap = val_snap - timedelta(days=val_days)
+        test_snapshot = max_timestamp - timedelta(days=self.windows.chk)
+        val_snapshot = test_snapshot - timedelta(days=test_days)
+        train_snapshot = val_snapshot - timedelta(days=val_days)
 
-        logger.info(f"Dataset span: {mn.date()} to {mx.date()} ({total_days}d)")
+        logger.info(
+            f"Dataset span: {min_timestamp.date()} to {max_timestamp.date()} ({total_days}d)"
+        )
 
-        tr = self.label(events, snapshot=str(train_snap.date()))
-        va = self.label(events, snapshot=str(val_snap.date()))
-        te = self.label(events, snapshot=str(test_snap.date()))
+        train = self.label(events, snapshot=str(train_snapshot.date()))
+        val = self.label(events, snapshot=str(val_snapshot.date()))
+        test = self.label(events, snapshot=str(test_snapshot.date()))
 
-        return tr, va, te
+        return train, val, test
 
-    def obs_events(self, events, labels):
+    def obs_events(self, events: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFrame:
         """Get events from observation period for the labeled customers."""
         start = labels["observation_start"].iloc[0]
         end = labels["observation_end"].iloc[0]
-        vids = labels["visitorid"].values
+        visitor_ids = labels["visitorid"].values
 
-        m = (
+        mask = (
             (events["timestamp"] >= start)
             & (events["timestamp"] < end)
-            & (events["visitorid"].isin(vids))
+            & (events["visitorid"].isin(visitor_ids))
         )
 
-        return events[m].copy()
+        return events[mask].copy()
 
-    def explain(self):
+    def explain(self) -> str:
         """Human-readable explanation."""
-        w = self.w
+        windows = self.windows
         return f"""
 ## How we define churn
 
-A customer is "churned" if they don't buy anything in the {w.chk} day churn window.
+A customer is "churned" if they don't buy anything in the {windows.chk} day churn window.
 
 Setup:
-- Observation: {w.obs} days (build features here)
-- Gap: {w.gap} days (buffer to avoid peeking at future)
-- Check: {w.chk} days (if no purchase = churned)
+- Observation: {windows.obs} days (build features here)
+- Gap: {windows.gap} days (buffer to avoid peeking at future)
+- Check: {windows.chk} days (if no purchase = churned)
 
-So a churned customer hasn't bought anything in {w.obs + w.gap + w.chk}+ days.
+So a churned customer hasn't bought anything in {windows.obs + windows.gap + windows.chk}+ days.
 That's a pretty clear signal they've disengaged.
 """
