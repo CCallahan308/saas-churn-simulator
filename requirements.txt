@@ -9,7 +9,7 @@ shap>=0.42
 matplotlib>=3.7
 seaborn>=0.12
 plotly>=6.7.0
-streamlit>=1.28.0
+streamlit>=1.57.0
 
 # Jupyter and widgets
 jupyter>=1.0
