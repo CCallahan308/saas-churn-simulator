@@ -1,5 +1,5 @@
 # Python 3.11 to match CI and the version the lockfile was resolved against.
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
