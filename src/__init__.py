@@ -19,11 +19,11 @@ from src.simulator import InterventionSimulator
 __version__ = "1.0.0"
 
 __all__ = [
-    "DataLoader",
-    "CustomerStateLabeler",
-    "FeatureEngineer",
-    "RetentionModel",
     "CustomerSegmenter",
+    "CustomerStateLabeler",
+    "DataLoader",
+    "FeatureEngineer",
     "InterventionSimulator",
+    "RetentionModel",
 ]
 

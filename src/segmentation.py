@@ -2,6 +2,7 @@
 
 import operator
 from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 import pandas as pd
@@ -44,7 +45,7 @@ class CustomerSegmenter:
 
     # segment rules as (r_min, r_max, f_min, f_max, m_min, m_max)
     # format is different from before to vary structure
-    RULES = [
+    RULES: ClassVar[list[tuple]] = [
         ("Champions", 4, 5, 4, 5, 4, 5),
         ("Loyal", 3, 5, 3, 5, 3, 5),
         ("PotentialLoyalist", 4, 5, 2, 4, 2, 4),
@@ -58,7 +59,7 @@ class CustomerSegmenter:
     ]
 
     # descriptions with varied formatting
-    SEG_INFO = {
+    SEG_INFO: ClassVar[dict[str, str]] = {
         "Champions": "your best customers - recent, frequent, high value",
         "Loyal": "good spenders, responsive to promos",
         "PotentialLoyalist": "recent buyers with decent spend",
@@ -71,7 +72,7 @@ class CustomerSegmenter:
         "Hibernating": "low engagement all around",
     }
 
-    ACTIONS = {
+    ACTIONS: ClassVar[dict[str, str]] = {
         "Champions": "reward them, early access to new stuff",
         "Loyal": "upsell, ask for reviews",
         "PotentialLoyalist": "loyalty program, cross-sell",

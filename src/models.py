@@ -3,7 +3,7 @@
 
 import warnings
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import mlflow
 import numpy as np
@@ -132,7 +132,7 @@ class RetentionModel:
     Supports: logistic, lightgbm, random_forest, gradient_boosting
     """
 
-    SUPPORTED_MODELS = list(DEFAULT_PARAMS.keys())
+    SUPPORTED_MODELS: ClassVar[list[str]] = list(DEFAULT_PARAMS.keys())
 
     def __init__(
         self,

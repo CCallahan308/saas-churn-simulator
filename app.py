@@ -10,10 +10,10 @@ generated from a synthetic distribution to illustrate the pipeline behavior.
 import json
 from pathlib import Path
 
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
+import streamlit as st
 
 MODELS_DIR = Path(__file__).parent / "models"
 
@@ -583,11 +583,11 @@ def render_analysis_charts():
             xaxis_title="Churn Probability",
             yaxis_title="Users",
             height=320,
-            margin=dict(l=0, r=20, t=20, b=0),
+            margin={"l": 0, "r": 20, "t": 20, "b": 0},
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(family='Inter, sans-serif', color='#a1a1aa', size=12),
-            hoverlabel=dict(bgcolor='#18181b', font_size=12)
+            font={"family": 'Inter, sans-serif', "color": '#a1a1aa', "size": 12},
+            hoverlabel={"bgcolor": '#18181b', "font_size": 12}
         )
         fig.update_xaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
         fig.update_yaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
@@ -626,11 +626,11 @@ def render_analysis_charts():
             xaxis_title="Importance",
             yaxis_title="",
             height=320,
-            margin=dict(l=0, r=20, t=20, b=0),
+            margin={"l": 0, "r": 20, "t": 20, "b": 0},
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(family='Inter, sans-serif', color='#a1a1aa', size=12),
-            hoverlabel=dict(bgcolor='#18181b', font_size=12)
+            font={"family": 'Inter, sans-serif', "color": '#a1a1aa', "size": 12},
+            hoverlabel={"bgcolor": '#18181b', "font_size": 12}
         )
         fig.update_xaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False, tickformat='.0%')
         fig.update_yaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
@@ -717,8 +717,8 @@ def render_roi_calculator():
         x=target_range,
         y=roi_curve,
         mode='lines+markers',
-        line=dict(color='#3b82f6', width=2),
-        marker=dict(size=8, color='#3b82f6'),
+        line={"color": '#3b82f6', "width": 2},
+        marker={"size": 8, "color": '#3b82f6'},
         hovertemplate='<b>%{x}%</b> targeting → <b>%{y:.0f}%</b> ROI<extra></extra>'
     ))
     fig.add_hline(y=100, line_dash="dot", line_color="#10b981", line_width=1.5,
@@ -732,11 +732,11 @@ def render_roi_calculator():
         xaxis_title="Targeting %",
         yaxis_title="ROI %",
         height=240,
-        margin=dict(l=0, r=20, t=10, b=0),
+        margin={"l": 0, "r": 20, "t": 10, "b": 0},
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, sans-serif', color='#a1a1aa', size=11),
-        hoverlabel=dict(bgcolor='#18181b')
+        font={"family": 'Inter, sans-serif', "color": '#a1a1aa', "size": 11},
+        hoverlabel={"bgcolor": '#18181b'}
     )
     fig.update_xaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)
     fig.update_yaxes(gridcolor='rgba(39, 39, 42, 0.5)', zeroline=False)

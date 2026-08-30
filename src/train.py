@@ -196,7 +196,7 @@ def run(
                 "model_type": model_type,
                 "random_state": RANDOM_STATE,
                 "sample": sample,
-                "cohort_size": int(len(labels)),
+                "cohort_size": len(labels),
                 "churn_rate": round(float(labels["churned"].mean()), 4),
                 "windows": {"obs": windows.obs, "gap": windows.gap, "chk": windows.chk},
                 "tuned": tune,

@@ -342,7 +342,7 @@ class FeatureEngineer:
             count_cols = [
                 col
                 for col in features.columns
-                if "count" in col or col.startswith("total") or col.startswith("txn")
+                if "count" in col or col.startswith(("total", "txn"))
             ]
             features[count_cols] = features[count_cols].fillna(0)
 

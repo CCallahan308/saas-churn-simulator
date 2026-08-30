@@ -19,56 +19,56 @@ def events():
     # customer 1: mixed activity
     for d in range(0, 30, 2):
         rows.append(
-            dict(
-                timestamp=base + timedelta(days=d),
-                visitorid=1,
-                event="view",
-                itemid=100 + (d % 10),
-                transactionid=np.nan,
-            )
+            {
+                "timestamp": base + timedelta(days=d),
+                "visitorid": 1,
+                "event": "view",
+                "itemid": 100 + (d % 10),
+                "transactionid": np.nan,
+            }
         )
     for d in [5, 15, 25]:
         rows.append(
-            dict(
-                timestamp=base + timedelta(days=d),
-                visitorid=1,
-                event="addtocart",
-                itemid=100 + d,
-                transactionid=np.nan,
-            )
+            {
+                "timestamp": base + timedelta(days=d),
+                "visitorid": 1,
+                "event": "addtocart",
+                "itemid": 100 + d,
+                "transactionid": np.nan,
+            }
         )
     for d in [10, 20]:
         rows.append(
-            dict(
-                timestamp=base + timedelta(days=d),
-                visitorid=1,
-                event="transaction",
-                itemid=100 + d,
-                transactionid=1000 + d,
-            )
+            {
+                "timestamp": base + timedelta(days=d),
+                "visitorid": 1,
+                "event": "transaction",
+                "itemid": 100 + d,
+                "transactionid": 1000 + d,
+            }
         )
 
     # customer 2: only views
     for d in range(0, 20, 5):
         rows.append(
-            dict(
-                timestamp=base + timedelta(days=d),
-                visitorid=2,
-                event="view",
-                itemid=200 + d,
-                transactionid=np.nan,
-            )
+            {
+                "timestamp": base + timedelta(days=d),
+                "visitorid": 2,
+                "event": "view",
+                "itemid": 200 + d,
+                "transactionid": np.nan,
+            }
         )
 
     # customer 3: one purchase
     rows.append(
-        dict(
-            timestamp=base + timedelta(days=15),
-            visitorid=3,
-            event="transaction",
-            itemid=301,
-            transactionid=3001,
-        )
+        {
+            "timestamp": base + timedelta(days=15),
+            "visitorid": 3,
+            "event": "transaction",
+            "itemid": 301,
+            "transactionid": 3001,
+        }
     )
 
     df = pd.DataFrame(rows)
@@ -203,13 +203,13 @@ def test_lots_of_customers():
     for cid in range(n):
         for d in range(0, 30, 5):
             rows.append(
-                dict(
-                    timestamp=base + timedelta(days=d),
-                    visitorid=cid,
-                    event=np.random.choice(["view", "addtocart", "transaction"]),
-                    itemid=cid * 100 + d,
-                    transactionid=cid * 1000 + d if np.random.random() > 0.5 else np.nan,
-                )
+                {
+                    "timestamp": base + timedelta(days=d),
+                    "visitorid": cid,
+                    "event": np.random.choice(["view", "addtocart", "transaction"]),
+                    "itemid": cid * 100 + d,
+                    "transactionid": cid * 1000 + d if np.random.random() > 0.5 else np.nan,
+                }
             )
     evts = pd.DataFrame(rows)
     evts["timestamp"] = pd.to_datetime(evts["timestamp"])

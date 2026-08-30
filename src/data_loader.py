@@ -3,6 +3,7 @@
 
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 import pandas as pd
 from loguru import logger
@@ -20,14 +21,14 @@ class DataLoader:
     """
 
     KAGGLE_DS = "retailrocket/ecommerce-dataset"
-    FILES = [
+    FILES: ClassVar[list[str]] = [
         "events.csv",
         "item_properties_part1.csv",
         "item_properties_part2.csv",
         "category_tree.csv",
     ]
-    REQUIRED_EVENT_COLS = {"timestamp", "visitorid", "event", "itemid"}
-    DTYPES = {
+    REQUIRED_EVENT_COLS: ClassVar[set[str]] = {"timestamp", "visitorid", "event", "itemid"}
+    DTYPES: ClassVar[dict[str, str]] = {
         "visitorid": "int64",
         "itemid": "int64",
         "event": "category",
@@ -59,7 +60,7 @@ class DataLoader:
                 str(self.raw),
                 "--unzip",
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if res.returncode != 0:
                 logger.warning(f"failed: {res.stderr}")
                 return False
