@@ -1,6 +1,6 @@
-# SaaS Churn Simulator
+# Churn ROI Simulator
 
-An end-to-end churn-prediction and retention-ROI pipeline for subscription / event-log products, built for **correctness and reproducibility** and demonstrated honestly on the RetailRocket dataset (2.7M events, 1.4M visitors).
+An end-to-end churn-prediction and retention-ROI pipeline for event-log products, built for **correctness and reproducibility** and demonstrated honestly on the RetailRocket e-commerce dataset (2.7M events, 1.4M visitors).
 
 **[Live demo](https://saas-churn-simulator-ccallahan308.streamlit.app/)** · leakage-safe labeling · Optuna-tuned + calibrated · reproducible via `make data && make train`
 
@@ -8,7 +8,7 @@ An end-to-end churn-prediction and retention-ROI pipeline for subscription / eve
 
 - **What:** predict which active buyers won't come back, then turn the risk scores into a retention-budget decision (the ROI simulator).
 - **How:** time-windowed leakage-safe labeling → behavioral features → LightGBM (Optuna-tuned, isotonic-calibrated) benchmarked against a LogisticRegression baseline.
-- **Result (committed, reproducible):** 5-fold CV ROC-AUC **0.88 ± 0.06**. On RetailRocket the churn base rate is ~99%, so business *lift* is ~1.0 — the value here is the methodology and honest evaluation, not a headline metric (see [Limitations](#limitations)).
+- **Result (committed, reproducible):** the tuned LightGBM does **not** beat the simple baseline on the holdout (test ROC-AUC 0.83 vs 0.91; 5-fold CV 0.88 ± 0.06 — single holdouts swing wildly at this base rate). The durable deliverable is the leakage-safe pipeline and the **ROI simulator** that turns risk scores into a contact-budget decision (see [Limitations](#limitations)).
 
 ## Problem
 
@@ -83,8 +83,11 @@ requirements.txt       loose floors (CI + Dependabot)   ·   requirements.lock  
 
 ## Related work
 
-- [SignalForge](https://github.com/CCallahan308/signalforge) — telco churn, deeper statistics (bootstrap CIs, calibration).
-- [E-Commerce Retention & Growth](https://github.com/CCallahan308/ecommerce-retention-growth) — XGBoost on the KKBox subscription dataset.
+Three retention projects, three different questions:
+
+- [SignalForge](https://github.com/CCallahan308/signalforge) — *which model, and is the difference real?* (bootstrap CIs, paired tests, calibration)
+- **This repo** — *what is a churn score worth in dollars when the base rate caps lift?* (retention-budget ROI simulator)
+- [Ecommerce Retention & Growth](https://github.com/CCallahan308/ecommerce-retention-growth) — *which customers to win back, at what LTV?* (KKBox segmentation)
 
 ## License
 
